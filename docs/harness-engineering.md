@@ -164,9 +164,11 @@ scripts/eval/
 
 ---
 
-## 5. 代理协作约定（Claude Code 专项）
+## 5. 代理协作约定
 
-### 5.1 项目 Skills
+> **工具中立原则**：本节除 5.1 外均与具体编码代理无关。P0 阶段实现由 Qoder 执行（见 [tech-plan.md](./tech-plan.md)），后续迭代可能换用 Claude Code 或其他代理——规格三段式（§2.1）、DoD 自查清单（§5.2）、CI 门禁（§5.3）对任何代理同样适用，Qoder 的任务 prompt 应直接复用它们。AGENTS.md 是所有代理共读的入口，保持工具无关的措辞。仅 5.1 的 `.claude/skills/` 是 Claude Code 专属机制，且本就排在建设顺序（§6）最后一步，P0 不建。
+
+### 5.1 项目 Skills（Claude Code 专属，P2 提效项）
 
 在 `.claude/skills/` 沉淀高频工作流，比如：
 
@@ -200,7 +202,7 @@ harness 不要一次建全，跟着产品 P0 的节奏铺：
 |------|------|------|
 | 1 | docs/specs 骨架 + data-model.md；page.tsx 迁 `/design`；建 fixtures（公版小说 + 手工 golden 初版） | 规格层可用，UI 开发解锁 |
 | 2 | `src/lib/ai/` 封装层 + mock；SQLite + Drizzle + seed 脚本 | 零 API 开发环境 |
-| 3 | 摄取管线（走真实 Batch API）+ extract.eval | 第一个带回归护栏的 AI 能力 |
+| 3 | 摄取管线（按需 drain 模型，Batch API 延至 P1）+ extract.eval | 第一个带回归护栏的 AI 能力 |
 | 4 | 生成工作台 + 上下文组装器（含单测/snapshot）+ generate.eval | 核心体验 + 质量基线 |
 | 5 | usage 看板、Playwright 截图、.claude/skills | 迭代提效 |
 
@@ -208,4 +210,4 @@ harness 不要一次建全，跟着产品 P0 的节奏铺：
 
 ---
 
-*v1.0 — 2026-07-03，随首个模块落地后回顾修订*
+*v1.1 — 2026-07-04。v1.1 变更：§5 增加工具中立原则（P0 执行者为 Qoder，规格/DoD/CI 门禁对任何代理通用；skills 为 Claude Code 专属且延后）。随首个模块落地后回顾修订*
