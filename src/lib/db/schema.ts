@@ -35,6 +35,10 @@ export const bibleEntryKindEnum = z.enum([
   "timeline_event",
 ]);
 
+// ADR-005: origin × editedByUser distinguishes extracted-untouched /
+// corrected (extracted + editedByUser) / user-created fanon ("user").
+export const bibleEntryOriginEnum = z.enum(["extracted", "user"]);
+
 // ------------------------------------------------------------------
 // Tables
 // ------------------------------------------------------------------
@@ -100,6 +104,7 @@ export const bibleEntries = sqliteTable("bible_entries", {
   data: text("data", { mode: "json" }).notNull(),
   anchors: text("anchors", { mode: "json" }).notNull().default("[]"),
   confidence: real("confidence").notNull().default(0),
+  origin: text("origin").notNull().default("extracted"),
   editedByUser: integer("edited_by_user", { mode: "boolean" })
     .notNull()
     .default(false),

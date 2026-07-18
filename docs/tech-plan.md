@@ -58,7 +58,7 @@
 | 一致性检查器、风格迁移、对话引导 | P1 | 生成的三种基础交互先跑通 |
 | EPUB/PDF、导出、登录、支付 | P1+ | 产品文档已定 |
 | evals 评测脚本（extract/generate） | P1 | 写评测脚本本身要烧 credit；P0 用 golden fixture 人工抽查 + §5.4 人工评分卡代替回归——**核心假设的验证手段不能一并砍掉** |
-| Playwright 截图、.claude/skills | P1 | 提效设施，等有东西可提效再建 |
+| Playwright 截图、skills 内容沉淀 | P1 | 提效设施；skills 挂载骨架（`.agents/skills/` + Claude stub）已建成 |
 
 ---
 
@@ -91,6 +91,7 @@
 - **ADR-002 摄取不用 Batch API，改用队列表 + 按需 drain**：本地 `next start` 是常驻 Node 进程，摄取拆为 `ingest_jobs` 队列表中的原子任务，**任务状态与产物只存这一张表**（`status` + `result` JSON 列），`chapters` 不持有抽取状态——一处真相，杜绝双写不同步。消费**不用常驻轮询 worker**：`next dev` 热重载会重复实例化模块，常驻 poller 有多副本重复消费（重复扣 API 费）的风险；改为**按需触发的 drain 循环**——入队后触发一次循环，消费到无 pending 为止。互斥采用**逐 job 原子 CAS**：`UPDATE ingest_jobs SET status='running' WHERE status='pending'`（`better-sqlite3` 同步单写器天然序列化），失败/超时的 job 由 `updatedAt` 超时机制（如 5 分钟）重置为 `failed`；前端轮询 status 时若发现"有 pending/failed 且无 running"（如进程重启后）可再次触发 drain，可恢复性由此闭环。50% 折扣对 ≤50 万字文本节省 <$2，换不来 Batch 基建的 credit 成本。**适用边界：drain 模型依赖长驻 Node 进程（本地 `next start` / 自托管），部署到 serverless（Vercel 等）后请求结束进程即冻结，drain 循环失效——P1 上线时若选 serverless，需引入独立 worker 或队列服务，这不是"只换数据库驱动"能覆盖的，届时另立 ADR。**
 - **ADR-003 百科单表 + kind 判别式**：Setting/Character/Relationship/PlotArc/TimelineEvent 存一张 `bible_entries` 表，`kind` 字段 + `data` JSON 列（zod discriminated union 校验）。五张表 → 一张表，CRUD/UI/抽取写入全部只写一遍。类型安全由 zod 层保证。
 - **ADR-004 生成走 SSE Route Handler**：`ReadableStream` 返回 `text/event-stream`（Next 官方支持的流式模式），不引 tRPC/socket 等任何新协议层。
+- **ADR-005 百科条目 origin 三态**：`bible_entries.origin`（extracted/user）× `editedByUser` 区分「抽取原文 / 校订 / 二创新增」。二创改设定与修正抽取错误是两种语义，混在单一 `editedByUser` 字段会让重摄取策略与 P1 覆盖层（patches 表）都失去迁移依据；一个字段的成本，换 P1 数据模型不回迁。生成组装器据此给用户条目标注更高优先级。细则见 [specs/bible.md](./specs/bible.md) §2.1。
 
 ---
 
@@ -269,7 +270,7 @@ mkdir -p fixtures/novels fixtures/golden fixtures/recordings src/lib/{db,ai,inge
 | 2 | T8 属性面板 → 纯表格行内编辑 | −80 | 编排体验降级 |
 | 3 | T7 编辑态 → 只读浏览 + JSON Textarea 直改 | −100 | 校订体验降级，数据能力不变 |
 | 4 | T10 砍"局部重写+版本分叉"，只留线性生成/续写 | −80 | 核心假设仍可验证 |
-| 5 | T5 归并层 → 纯代码精确匹配（去掉 haiku 裁决） | −60 | 别名归一质量下降，golden 数据可兜底 |
+| 5 | T5 归并层 → 纯代码精确匹配（去掉 haiku 裁决） | −60 | 别名归一质量下降，golden 数据可兜底。**已于 T5 实现时执行（2026-07-18 记账）** |
 
 全部执行可回收 370 credit ≈ 再造一个 T10 的空间。反向地，若 M4 后剩余 >500，可按 P1 顺序补：evals 脚本 → 导出 TXT → 一致性检查器。
 
@@ -285,4 +286,18 @@ mkdir -p fixtures/novels fixtures/golden fixtures/recordings src/lib/{db,ai,inge
 
 ---
 
-*v1.1 — 2026-07-04。v1.1 变更：新增 §5.4 人工质量评分卡（P0 核心假设验证兜底）；§5.2 明确百科断点 1h TTL 与 4096 最低可缓存前缀；ADR-002 补充 serverless 适用边界；§11 验收项同步。实际消耗记录：（随任务完成追加）*
+*v1.2 — 2026-07-18。v1.2 变更：新增 ADR-005（百科 origin 三态）；降级清单第 5 条标记为已执行；补 `docs/specs/`（ingest/bible/generate/script）作为 T6–T10 的模块级规格。v1.1 变更：新增 §5.4 人工质量评分卡（P0 核心假设验证兜底）；§5.2 明确百科断点 1h TTL 与 4096 最低可缓存前缀；ADR-002 补充 serverless 适用边界；§11 验收项同步。实际消耗记录：（随任务完成追加）*
+
+---
+
+## 十二、实际进度记录
+
+> 2026-07-18 起执行者切换为 Kimi Code，Qoder credit 记账不再适用；改为按任务记录完成状态。
+
+| 日期 | 执行者 | 内容 | 状态 |
+|---|---|---|---|
+| （此前） | Qoder | T1 数据层 / T2 fixtures+golden / T3 AI 封装层+mock / T4 切分器 / T5 摄取管线 | ✅ 见 git log |
+| 2026-07-18 | Kimi Code | Phase 0（分析后计划外增补）：specs 四篇（ingest/bible/generate/script）；ADR-005 origin 三态 + schema 落库；client.ts 懒加载单例 + JSON 容错解析；pipeline 原子 CAS、汇总 seq 改取 `chapters.seq`、attemptCount 累加；split GBK 编码探测；seed 清库顺序修复（补删 ingest_jobs） | ✅ lint/tsc/test 全绿（8 tests）+ seed 通过 |
+| 2026-07-18 | Kimi Code | T9 上下文组装器：`ai/assemble-context.ts` 纯函数（spec generate.md §2.1：稳定前缀合并百科、显式引用检索、前文 6000 字截断、三模式指令）+ 10 单测（含「口吻样例必在」、用户设定优先标注、baseDraft 优先）+ snapshot 固化 prompt 结构 | ✅ lint/tsc/test 全绿（18 tests） |
+| 2026-07-18 | Kimi Code | T6 上传+进度 / T7 百科 UI（含 actions.test）/ T8 脚本编辑器 / T10 生成工作台（SSE + 三栏 + 三模式 + 版本链）/ T11 /design 迁移+样张（根页改 redirect→/projects）| ✅ 代码就绪，tsc 绿 + test 23 全绿；⚠️ 未 commit、未跑 build、未端到端走查 |
+| 2026-07-18 | — | **Kimi Code 额度用尽，工作中断。** 交接单见 [handoff.md](./handoff.md)。剩余：T12 收尾（先删遗留文件 `tmp-verify-generate.ts` 修 lint 红灯 → build → AGENTS.md 回写）+ §11 真实 API 验收项 + §5.4 对照实验 | ⏸ 待续 |

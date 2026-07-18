@@ -1,6 +1,6 @@
 # 持续迭代工程体系（Harness / Design Engineering）
 
-> 目标：让"人 + AI 编码代理（Claude Code）"能够长期、高质量地迭代这个产品。
+> 目标：让"人 + AI 编码代理"能够长期、高质量地迭代这个产品。当前已适配：Kimi Code、Claude Code（接触点见 §5.1 适配矩阵）。
 > 核心思路：**把"什么是对的"沉淀为机器可验证的资产**——文档即规格、fixture 即合同、评测即回归、截图即验收。代理每次迭代都在这套护栏内工作，人只在护栏边界上做决策。
 >
 > 配套产品文档：[product-design.md](./product-design.md)
@@ -166,14 +166,23 @@ scripts/eval/
 
 ## 5. 代理协作约定
 
-> **工具中立原则**：本节除 5.1 外均与具体编码代理无关。P0 阶段实现由 Qoder 执行（见 [tech-plan.md](./tech-plan.md)），后续迭代可能换用 Claude Code 或其他代理——规格三段式（§2.1）、DoD 自查清单（§5.2）、CI 门禁（§5.3）对任何代理同样适用，Qoder 的任务 prompt 应直接复用它们。AGENTS.md 是所有代理共读的入口，保持工具无关的措辞。仅 5.1 的 `.claude/skills/` 是 Claude Code 专属机制，且本就排在建设顺序（§6）最后一步，P0 不建。
+> **工具中立原则**：规格三段式（§2.1）、DoD 自查清单（§5.2）、CI 门禁（§5.3）与具体编码代理无关，对任何代理同样适用；P0 阶段实现由 Qoder 执行（见 [tech-plan.md](./tech-plan.md)），其任务 prompt 应直接复用它们。AGENTS.md 是所有代理共读的入口，保持工具无关的措辞。代理专属机制只有两类——skills 内容沉淀（§5.1）与各工具的入口/权限配置文件——全部按 §5.1 的适配矩阵维护：新增代理只加一行矩阵 + 一份入口文件，不动本节其他内容。
 
-### 5.1 项目 Skills（Claude Code 专属，P2 提效项）
+### 5.1 代理适配矩阵 + 项目 Skills
 
-在 `.claude/skills/` 沉淀高频工作流，比如：
+**适配矩阵**（harness 与各编码代理的全部接触点，一处维护）：
+
+| 接触点 | Kimi Code | Claude Code |
+|--------|-----------|-------------|
+| 入口指令 | 原生读 `AGENTS.md` | `CLAUDE.md` → `@AGENTS.md` 导入，单一来源仍是 AGENTS.md |
+| 项目 skills | 原生扫描 `.agents/skills/`（另支持 `.kimi-code/skills/`） | 扫 `.claude/skills/`，内放同名 stub 指向 `.agents/` 正本 |
+| 权限/设置 | 用户级 `~/.kimi-code/config.toml` 的 `[[permission.rules]]`；`.kimi-code/local.toml` 为机器私有，不入库 | `.claude/settings.json`（共享）、`settings.local.json`（个人，git-ignore） |
+
+**Skills 单一来源在 `.agents/skills/<name>/SKILL.md`**（Kimi Code 原生扫描，也是跨工具通用约定）。Claude Code 不扫描该目录，故在 `.claude/skills/<name>/SKILL.md` 放 stub：frontmatter 的 name/description 与正本一致，正文仅一句指向正本。改 skill 先改 `.agents/` 正本，stub 只同步 frontmatter；不用符号链接（Windows 不友好）。skills 挂载骨架已建（`dod-check` 为验证示例），以下内容沉淀仍排在建设顺序（§6）最后一步：
 
 | Skill | 内容 |
 |-------|------|
+| `dod-check` | 已建。按 §5.2 DoD 清单逐项自查并报告（兼作双代理挂载的验证） |
 | `new-module` | 读对应 spec → 建 schema/route/组件骨架 → 建样张页 → 更新 AGENTS.md 指针 |
 | `run-evals` | 跑评测 → 写报告 → 对比上次分数，退步则列出 prompt diff |
 | `update-spec` | 实现与规格出现偏差时，引导"改规格还是改实现"的决策并同步文档 |
@@ -204,10 +213,10 @@ harness 不要一次建全，跟着产品 P0 的节奏铺：
 | 2 | `src/lib/ai/` 封装层 + mock；SQLite + Drizzle + seed 脚本 | 零 API 开发环境 |
 | 3 | 摄取管线（按需 drain 模型，Batch API 延至 P1）+ extract.eval | 第一个带回归护栏的 AI 能力 |
 | 4 | 生成工作台 + 上下文组装器（含单测/snapshot）+ generate.eval | 核心体验 + 质量基线 |
-| 5 | usage 看板、Playwright 截图、.claude/skills | 迭代提效 |
+| 5 | usage 看板、Playwright 截图、skills 内容沉淀（挂载骨架已建） | 迭代提效 |
 
-判断 harness 是否成立的标准：**一个新会话的 Claude Code，只读 AGENTS.md 和相关 spec，能独立完成一个模块迭代并自证质量**。达不到，说明规格或验证层有洞，补洞优先于写新功能。
+判断 harness 是否成立的标准：**一个新会话的编码代理（Kimi Code / Claude Code），只读 AGENTS.md 和相关 spec，能独立完成一个模块迭代并自证质量**。达不到，说明规格或验证层有洞，补洞优先于写新功能。
 
 ---
 
-*v1.1 — 2026-07-04。v1.1 变更：§5 增加工具中立原则（P0 执行者为 Qoder，规格/DoD/CI 门禁对任何代理通用；skills 为 Claude Code 专属且延后）。随首个模块落地后回顾修订*
+*v1.2 — 2026-07-18。v1.2 变更：§5.1 改为代理适配矩阵 + skills 双挂载（正本 `.agents/skills/`，Claude Code 用 stub），去除 Claude Code 单一绑定；§6 判断标准泛化为任意已适配代理。v1.1 变更：§5 增加工具中立原则（P0 执行者为 Qoder，规格/DoD/CI 门禁对任何代理通用）。随首个模块落地后回顾修订*

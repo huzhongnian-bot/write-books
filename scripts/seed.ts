@@ -6,6 +6,7 @@ import {
   bibleEntries,
   storylines,
   sceneNodes,
+  ingestJobs,
 } from "@/lib/db/schema";
 import fs from "node:fs";
 import path from "node:path";
@@ -37,6 +38,7 @@ async function seed() {
   await db.delete(sceneNodes);
   await db.delete(storylines);
   await db.delete(bibleEntries);
+  await db.delete(ingestJobs);
   await db.delete(chapters);
   await db.delete(sourceWorks);
   await db.delete(projects);

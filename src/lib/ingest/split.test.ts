@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { splitChapters } from "./split";
+import iconv from "iconv-lite";
+import { splitChapters, decodeText } from "./split";
 
 const FIXTURE_TEXT = `第1回 灵根育孕源流出 心性修持大道生
 
@@ -29,5 +30,22 @@ describe("splitChapters", () => {
     const chapters = splitChapters("没有章节标题的纯文本内容。");
     expect(chapters).toHaveLength(1);
     expect(chapters[0].seq).toBe(1);
+  });
+});
+
+describe("decodeText", () => {
+  it("decodes valid UTF-8 as utf-8", () => {
+    const buf = Buffer.from("第1回 测试\n\n正文内容", "utf-8");
+    const { text, encoding } = decodeText(buf);
+    expect(encoding).toBe("utf-8");
+    expect(text).toContain("正文内容");
+  });
+
+  it("falls back to GBK for non-UTF-8 bytes", () => {
+    const buf = iconv.encode("第1回 测试\n\n正文内容", "gbk");
+    const { text, encoding } = decodeText(buf);
+    expect(encoding).toBe("gbk");
+    expect(text).toContain("正文内容");
+    expect(text).toContain("第1回");
   });
 });

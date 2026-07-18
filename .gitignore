@@ -43,3 +43,6 @@ next-env.d.ts
 # local database & migrations
 /sqlite.db
 /drizzle
+
+# Kimi Code project-local settings (machine-specific)
+.kimi-code/local.toml

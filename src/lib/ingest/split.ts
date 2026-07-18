@@ -1,3 +1,5 @@
+import iconv from "iconv-lite";
+
 export interface ChapterSplit {
   seq: number;
   title: string;
@@ -47,7 +49,19 @@ export function splitChapters(text: string): ChapterSplit[] {
   return chapters;
 }
 
-export function detectEncoding(_buffer: Buffer): "utf-8" | "gbk" {
-  // P0 only supports UTF-8; GBK detection can be added later with iconv-lite
-  return "utf-8";
+/**
+ * Decode an uploaded TXT buffer. Chinese web-novel TXT files are very often
+ * GBK-encoded, so try strict UTF-8 first and fall back to GBK when the bytes
+ * are not valid UTF-8.
+ */
+export function decodeText(buffer: Buffer): {
+  text: string;
+  encoding: "utf-8" | "gbk";
+} {
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    return { text, encoding: "utf-8" };
+  } catch {
+    return { text: iconv.decode(buffer, "gbk"), encoding: "gbk" };
+  }
 }

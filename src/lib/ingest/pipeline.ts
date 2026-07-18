@@ -1,4 +1,4 @@
-import { eq, and, inArray, lt, count, isNotNull } from "drizzle-orm";
+import { eq, and, inArray, lt, count, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import {
@@ -7,7 +7,6 @@ import {
   bibleEntries,
   chapters,
   type IngestJob,
-  type SourceWork,
   extractChapterResultSchema,
   summaryResultSchema,
   type InsertBibleEntry,
@@ -92,8 +91,8 @@ async function claimPendingJobs(
   kind: "extract" | "summary",
   limit: number
 ): Promise<IngestJob[]> {
-  const pending = await db
-    .select()
+  const candidates = await db
+    .select({ id: ingestJobs.id })
     .from(ingestJobs)
     .where(
       and(
@@ -105,19 +104,25 @@ async function claimPendingJobs(
     .orderBy(ingestJobs.id)
     .limit(limit);
 
-  if (pending.length === 0) return [];
+  if (candidates.length === 0) return [];
 
-  await db
+  // Atomic claim (CAS): only rows still 'pending' are flipped, so a concurrent
+  // drain that selected the same candidates gets zero rows back and will not
+  // double-process (and double-bill) them. better-sqlite3 serializes
+  // statements, which makes this UPDATE the single point of mutual exclusion.
+  return db
     .update(ingestJobs)
     .set({ status: "running", updatedAt: new Date() })
     .where(
-      inArray(
-        ingestJobs.id,
-        pending.map((j) => j.id)
+      and(
+        inArray(
+          ingestJobs.id,
+          candidates.map((c) => c.id)
+        ),
+        eq(ingestJobs.status, "pending")
       )
-    );
-
-  return pending;
+    )
+    .returning();
 }
 
 // ------------------------------------------------------------------
@@ -181,15 +186,17 @@ async function markJobFailed(jobId: number, error: string): Promise<void> {
     .set({
       status: "failed",
       error,
-      attemptCount: 1, // will be incremented on retry
+      attemptCount: sql`${ingestJobs.attemptCount} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(ingestJobs.id, jobId));
 }
 
 // ------------------------------------------------------------------
-// Layer 2: entity merge (code-based, exact match + alias table)
+// Layer 2: entity merge (code-based, exact match only)
 // ------------------------------------------------------------------
+// NOTE: tech-plan degradation list item #5 is in effect — exact-match dedup,
+// no alias table, no haiku adjudication. Recorded 2026-07-18.
 
 type ExtractChapterResult = z.infer<typeof extractChapterResultSchema>;
 
@@ -249,12 +256,25 @@ async function processSummaryJob(workId: number): Promise<void> {
     )
     .orderBy(ingestJobs.id);
 
+  // The summary prompt numbers chapters by chapters.seq, not job id — anchors
+  // produced by the model must point at real chapter numbers.
+  const chapterSeqById = new Map(
+    (
+      await db
+        .select({ id: chapters.id, seq: chapters.seq })
+        .from(chapters)
+        .where(eq(chapters.workId, workId))
+    ).map((c) => [c.id, c.seq])
+  );
+
   const extractResults: ExtractResultWithSeq[] = extractJobsDone
     .map((job) => {
-      const chapter = job.chapterId;
+      const chapterId = job.chapterId;
       const parse = extractChapterResultSchema.safeParse(job.result);
-      if (!parse.success || !chapter) return null;
-      return { seq: job.id, result: parse.data };
+      if (!parse.success || !chapterId) return null;
+      const seq = chapterSeqById.get(chapterId);
+      if (seq === undefined) return null;
+      return { seq, result: parse.data };
     })
     .filter((r): r is ExtractResultWithSeq => r !== null);
 
@@ -426,7 +446,6 @@ export async function retryFailedChapter(
     .set({
       status: "pending",
       error: null,
-      attemptCount: 0,
       updatedAt: new Date(),
     })
     .where(
@@ -450,5 +469,3 @@ export async function startIngest(workId: number): Promise<void> {
   await createExtractJobs(workId);
   await drainIngest(workId);
 }
-
-
