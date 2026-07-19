@@ -313,13 +313,6 @@ async function processSummaryJob(workId: number): Promise<void> {
     )
     .then((rows) => rows[0]);
 
-  if (summaryJob) {
-    await db
-      .update(ingestJobs)
-      .set({ status: "done", result: summary, updatedAt: new Date() })
-      .where(eq(ingestJobs.id, summaryJob.id));
-  }
-
   const bibleRows: InsertBibleEntry[] = summary.bibleEntries.map((entry) => ({
     workId,
     kind: entry.kind,
@@ -329,9 +322,23 @@ async function processSummaryJob(workId: number): Promise<void> {
     confidence: entry.confidence,
   }));
 
-  if (bibleRows.length > 0) {
-    await db.insert(bibleEntries).values(bibleRows);
-  }
+  // 「标 summary done + 写 result」与「插 bible_entries」必须在同一事务：
+  // 崩溃在两者之间时，重启后 drainIngest 看到 summary done 会直接置 work
+  // done，bible_entries 永久丢失且不重试（docs/reviews/kimi-k3-review.md
+  // 缺陷 #1）。事务失败则 job 保持 running 且无 result，超时后由
+  // resetTimedOutRunningJobs 标 failed，下次 drain 重建 job 重跑。
+  db.transaction((tx) => {
+    if (summaryJob) {
+      tx.update(ingestJobs)
+        .set({ status: "done", result: summary, updatedAt: new Date() })
+        .where(eq(ingestJobs.id, summaryJob.id))
+        .run();
+    }
+
+    if (bibleRows.length > 0) {
+      tx.insert(bibleEntries).values(bibleRows).run();
+    }
+  });
 }
 
 // ------------------------------------------------------------------

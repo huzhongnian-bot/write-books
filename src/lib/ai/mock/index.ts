@@ -59,6 +59,7 @@ export const mockClient = {
   },
 
   async* callStreaming(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _req: StreamingRequest
   ): AsyncGenerator<string, { draftContent: string; usage: unknown }, void> {
     const text =

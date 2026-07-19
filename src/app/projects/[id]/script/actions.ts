@@ -144,20 +144,26 @@ export async function deleteSceneNode(input: unknown): Promise<ActionResult> {
 
   try {
     const node = await assertNodeInProject(projectId, nodeId);
-    await db.delete(sceneNodes).where(eq(sceneNodes.id, nodeId));
 
-    // 重排剩余节点 seq，保持 1..n 连续（spec §三：删除后列表与 seq 正确）
-    const rest = await db
-      .select({ id: sceneNodes.id })
-      .from(sceneNodes)
-      .where(eq(sceneNodes.storylineId, node.storylineId))
-      .orderBy(asc(sceneNodes.seq), asc(sceneNodes.id));
-    for (let i = 0; i < rest.length; i++) {
-      await db
-        .update(sceneNodes)
-        .set({ seq: i + 1 })
-        .where(eq(sceneNodes.id, rest[i].id));
-    }
+    // 删除 + 重排 seq 必须在同一事务，中途失败会留下 1..n 不连续的 seq
+    // （docs/reviews/kimi-k3-review.md 缺陷 #4）
+    db.transaction((tx) => {
+      tx.delete(sceneNodes).where(eq(sceneNodes.id, nodeId)).run();
+
+      // 重排剩余节点 seq，保持 1..n 连续（spec §三：删除后列表与 seq 正确）
+      const rest = tx
+        .select({ id: sceneNodes.id })
+        .from(sceneNodes)
+        .where(eq(sceneNodes.storylineId, node.storylineId))
+        .orderBy(asc(sceneNodes.seq), asc(sceneNodes.id))
+        .all();
+      for (let i = 0; i < rest.length; i++) {
+        tx.update(sceneNodes)
+          .set({ seq: i + 1 })
+          .where(eq(sceneNodes.id, rest[i].id))
+          .run();
+      }
+    });
 
     revalidatePath(scriptPath(projectId));
     return { ok: true };

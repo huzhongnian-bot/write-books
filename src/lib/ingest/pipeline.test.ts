@@ -118,6 +118,26 @@ describe("ingest pipeline (MOCK_AI=1)", () => {
     expect(failedJobs).toHaveLength(0);
   });
 
+  it("does not duplicate bible entries when drain runs again", async () => {
+    const { work } = await createFixtureWork();
+
+    await startIngest(work.id);
+    const before = await db
+      .select()
+      .from(bibleEntries)
+      .where(eq(bibleEntries.workId, work.id));
+    expect(before.length).toBeGreaterThan(0);
+
+    // summary 已 done 后再次 drain 应走 resume 分支，不重跑汇总、不重插 bible
+    await drainIngest(work.id);
+
+    const after = await db
+      .select()
+      .from(bibleEntries)
+      .where(eq(bibleEntries.workId, work.id));
+    expect(after).toHaveLength(before.length);
+  });
+
   it("resumes from existing results without re-calling AI", async () => {
     const { work, chapters } = await createFixtureWork();
 

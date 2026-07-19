@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { chapters, projects, sourceWorks } from "@/lib/db/schema";
-import { createExtractJobs, drainIngest } from "@/lib/ingest/pipeline";
+import { chapters, ingestJobs, projects, sourceWorks } from "@/lib/db/schema";
+import { drainIngest } from "@/lib/ingest/pipeline";
 import { decodeText, splitChapters } from "@/lib/ingest/split";
 
 const MAX_CHAPTERS = 60;
@@ -53,37 +53,61 @@ export async function POST(request: Request) {
   }
 
   try {
-    const [project] = await db
-      .insert(projects)
-      .values({ name: name.trim() })
-      .returning();
+    // project + work + chapters + jobs 四步写入必须在同一事务，中途失败
+    // 不留孤儿数据（docs/reviews/kimi-k3-review.md 缺陷 #4）。jobs 创建逻辑
+    // 与 createExtractJobs 一致；ingestStatus 在建 work 时已置 running。
+    // better-sqlite3 事务回调必须同步，故不复用 async 的 createExtractJobs。
+    const { projectId, workId } = db.transaction((tx) => {
+      const [project] = tx
+        .insert(projects)
+        .values({ name: name.trim() })
+        .returning()
+        .all();
 
-    const [work] = await db
-      .insert(sourceWorks)
-      .values({
-        projectId: project.id,
-        title: file.name.replace(/\.txt$/i, "") || name.trim(),
-        ingestStatus: "running",
-      })
-      .returning();
+      const [work] = tx
+        .insert(sourceWorks)
+        .values({
+          projectId: project.id,
+          title: file.name.replace(/\.txt$/i, "") || name.trim(),
+          ingestStatus: "running",
+        })
+        .returning()
+        .all();
 
-    await db.insert(chapters).values(
-      chapterList.map((chapter) => ({
-        workId: work.id,
-        seq: chapter.seq,
-        title: chapter.title,
-        content: chapter.content,
-        charCount: chapter.content.length,
-      }))
-    );
+      const insertedChapters = tx
+        .insert(chapters)
+        .values(
+          chapterList.map((chapter) => ({
+            workId: work.id,
+            seq: chapter.seq,
+            title: chapter.title,
+            content: chapter.content,
+            charCount: chapter.content.length,
+          }))
+        )
+        .returning({ id: chapters.id })
+        .all();
 
-    // 建 jobs + 置 ingestStatus=running 同步完成，drain 异步触发不阻塞响应
-    await createExtractJobs(work.id);
-    drainIngest(work.id).catch((err) => {
-      console.error(`drainIngest(workId=${work.id}) failed:`, err);
+      tx.insert(ingestJobs)
+        .values(
+          insertedChapters.map((chapter) => ({
+            workId: work.id,
+            chapterId: chapter.id,
+            kind: "extract" as const,
+            status: "pending" as const,
+          }))
+        )
+        .run();
+
+      return { projectId: project.id, workId: work.id };
     });
 
-    return Response.json({ projectId: project.id, workId: work.id });
+    // drain 异步触发不阻塞响应
+    drainIngest(workId).catch((err) => {
+      console.error(`drainIngest(workId=${workId}) failed:`, err);
+    });
+
+    return Response.json({ projectId, workId });
   } catch (err) {
     console.error("POST /api/works failed:", err);
     return Response.json({ error: "上传失败，请重试" }, { status: 500 });
