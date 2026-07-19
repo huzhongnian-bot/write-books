@@ -16,7 +16,7 @@
 - **切分**：`splitChapters()`，正则「第X章/回/节/卷」+ 空行启发；无匹配则全文作单章
 - **上限**：>60 章或 >50 万字 → 400 拒绝并提示（不替用户截断，由用户自行分卷）
 - **token 估算**：P0 不引入 tokenizer 依赖，`charCount × 1.3`（中文 1 字 ≈ 1–1.6 token 取中位）仅用于展示量级；真实成本以 `ai_calls` 实测落库为准
-- 成功路径：建 `projects` + `source_works`（ingestStatus=running）+ `chapters` + 每章 `ingest_jobs(kind=extract)`，触发 `drainIngest(workId)`（fire-and-forget，不阻塞响应），返回 `{ projectId, workId }`
+- 成功路径：建 `projects` + `source_works`（ingestStatus=running）+ `chapters` + 每章 `ingest_jobs(kind=extract)`，触发 `drainIngest(workId)`（fire-and-forget，不阻塞响应），返回 `{ projectId, workId }`。**四步写入在同一事务内**（better-sqlite3 同步事务回调），中途失败不留孤儿数据
 
 ### 2.2 摄取管线（T5 已实现，本 spec 固化 as-built 行为）
 
@@ -24,6 +24,7 @@
 - `ingest_jobs` 是摄取状态与产物的唯一真相（`status` + `result` JSON 列）；认领为**原子 CAS**：`UPDATE ... WHERE id IN (...) AND status='pending' RETURNING`，并发 drain 不会重复认领
 - 失败：单章 `failed` 不连坐；「重试失败章节」= `retryFailedChapter` 重置 pending 后 drain；`running` 超 5 分钟重置 `failed`；`attemptCount` 只增不减
 - 汇总输入的章节 `seq` 取自 `chapters.seq`（不是 job id）
+- 汇总落库原子性：「标 summary done + 写 result + 插 `bible_entries`」在同一事务；崩溃不会永久丢 bible（失败则 job 保持 running，超时置 failed 后重建重跑）
 - `source_works.ingestStatus` 是 job 聚合态的去规范化缓存，状态变更时同步更新
 
 ### 2.3 进度（`GET /api/works/[id]/status` + `/projects/[id]` 轮询）
@@ -34,9 +35,9 @@
 
 ## 三、验收标准
 
-- [ ] `MOCK_AI=1` 下上传 fixture TXT（12 章）：状态 running → done，`bible_entries` 有数据
-- [ ] 上传 GBK 编码 TXT：不乱码，章节数正确
+- [x] `MOCK_AI=1` 下上传 fixture TXT（12 章）：状态 running → done，`bible_entries` 有数据（2026-07-19 dev server smoke 实测）
+- [x] 上传 GBK 编码 TXT：不乱码，章节数正确（split 单测 GBK fallback 覆盖）
 - [ ] 上传 >60 章文件：400 + 明确提示，不写库
-- [ ] 人为置一章 failed 后重试：该章跑通，其余章不重复调用 AI
-- [ ] drain 中途杀进程后重新触发：已有 `result` 的 job 不重复调用 AI
-- [ ] `npm test` 中 pipeline / split 用例全绿
+- [x] 人为置一章 failed 后重试：该章跑通，其余章不重复调用 AI（pipeline 单测 retry + resume 用例覆盖）
+- [x] drain 中途杀进程后重新触发：已有 `result` 的 job 不重复调用 AI（pipeline 单测 resume 用例覆盖）
+- [x] `npm test` 中 pipeline / split 用例全绿（2026-07-19：24 tests 全绿）

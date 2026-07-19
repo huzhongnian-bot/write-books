@@ -280,9 +280,9 @@ mkdir -p fixtures/novels fixtures/golden fixtures/recordings src/lib/{db,ai,inge
 - [ ] 建单线脚本 3+ 场景节点，属性完整
 - [ ] 生成工作台：真实 API 下流式生成一个场景（800+ 字），续写、回退旧版本均可用；`ai_calls` 表记录含 `cache_read_input_tokens` 的 usage，二次生成缓存命中（验证平台 TTL 内的缓存经济性；若 TTL 实测不足，记录 miss 成本并回写缓存策略）
 - [ ] §5.4 人工评分卡对照实验已完成一轮，A 组（完整组装）均分 ≥ B 组 +0.5，记录已存档
-- [ ] `MOCK_AI=1` 下上述全流程无 API key 可演示
-- [ ] `npm run lint && npx tsc --noEmit && npm run build && npm test` 全绿
-- [ ] AGENTS.md 已回写命令与坑；实际 credit 消耗表已登记
+- [x] `MOCK_AI=1` 下上述全流程无 API key 可演示（2026-07-19 API 链路 smoke：上传→摄取→bible→SSE 生成全通；UI 页面未人工走查）
+- [x] `npm run lint && npx tsc --noEmit && npm run build && npm test` 全绿（2026-07-19 实测）
+- [x] AGENTS.md 已回写命令与坑（2026-07-19；credit 消耗表不再适用，执行者已切换 Kimi Code，见 §12 注）
 
 ---
 
@@ -301,3 +301,4 @@ mkdir -p fixtures/novels fixtures/golden fixtures/recordings src/lib/{db,ai,inge
 | 2026-07-18 | Kimi Code | T9 上下文组装器：`ai/assemble-context.ts` 纯函数（spec generate.md §2.1：稳定前缀合并百科、显式引用检索、前文 6000 字截断、三模式指令）+ 10 单测（含「口吻样例必在」、用户设定优先标注、baseDraft 优先）+ snapshot 固化 prompt 结构 | ✅ lint/tsc/test 全绿（18 tests） |
 | 2026-07-18 | Kimi Code | T6 上传+进度 / T7 百科 UI（含 actions.test）/ T8 脚本编辑器 / T10 生成工作台（SSE + 三栏 + 三模式 + 版本链）/ T11 /design 迁移+样张（根页改 redirect→/projects）| ✅ 代码就绪，tsc 绿 + test 23 全绿；⚠️ 未 commit、未跑 build、未端到端走查 |
 | 2026-07-18 | — | **Kimi Code 额度用尽，工作中断。** 交接单见 [handoff.md](./handoff.md)。剩余：T12 收尾（先删遗留文件 `tmp-verify-generate.ts` 修 lint 红灯 → build → AGENTS.md 回写）+ §11 真实 API 验收项 + §5.4 对照实验 | ⏸ 待续 |
+| 2026-07-19 | Kimi Code | T12 收尾 + 锐评缺陷修复：删 `tmp-verify-generate.ts`、修 mock unused warning（lint 转绿）、build 首验通过；缺陷#1 `processSummaryJob`「标 done + 插 bible」改同一事务；缺陷#4 `POST /api/works` 四步写入、`deleteSceneNode` 删除+reseq 包事务；pipeline 新增幂等回归测试（24 tests）。核实推翻两条：缺陷#2 模型名 `claude-opus-4-8` 经 SDK `Model` 类型证实为有效 ID（勿改）；缺陷#3 `callStreaming` MOCK 分支此前已是 `yield*` 透传。端到端 smoke（临时 DB + dev server）：上传→12 extract+1 summary 全 done→bible 落库→SSE delta/done→draft+ai_calls 落库，中断不落库 | ✅ lint/tsc/test 24 全绿 + build 绿 + API 链路 smoke 过；UI 未人工走查 |
