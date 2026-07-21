@@ -118,33 +118,52 @@ export async function* callStreaming(
   }
 
   const client = getRealClient();
+  // Spec docs/specs/generate.md §2.1: system（写作规范 + 百科核心的合并前缀）
+  // 是唯一 cache 断点；不足 4096 token 时平台静默不缓存，
+  // 命中率由 ai_calls.cache_read_input_tokens 持续观测（tech-plan §5.2）。
+  const system: Anthropic.Messages.TextBlockParam[] | undefined = req.system
+    ? [
+        {
+          type: "text",
+          text: req.system,
+          cache_control: { type: "ephemeral" },
+        },
+      ]
+    : undefined;
   const stream = await client.messages.create({
     model: req.model,
     max_tokens: req.maxTokens ?? 4096,
-    system: req.system,
+    system,
     messages: req.messages as Anthropic.Messages.MessageParam[],
     stream: true,
   });
 
   let fullText = "";
-  let lastUsage: unknown;
+  // message_stop 事件不带 usage；message_delta 的 usage 是累计值（含
+  // cache_read/cache_creation 字段），取最后一个为准，message_start 兜底。
+  let startUsage: Anthropic.Messages.Usage | null = null;
+  let deltaUsage: Anthropic.Messages.MessageDeltaUsage | null = null;
 
-  for await (const event of stream as unknown as AsyncIterable<{
-    type: string;
-    delta?: { text?: string };
-    usage?: unknown;
-  }>) {
-    if (event.type === "content_block_delta" && event.delta?.text) {
+  for await (const event of stream) {
+    if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "text_delta"
+    ) {
       fullText += event.delta.text;
       yield event.delta.text;
     }
-    if (event.type === "message_stop" && event.usage) {
-      lastUsage = event.usage;
+    if (event.type === "message_start") {
+      startUsage = event.message.usage;
+    }
+    if (event.type === "message_delta") {
+      deltaUsage = event.usage;
     }
   }
 
+  const usage = deltaUsage ?? startUsage;
+
   // Only reached when the stream ran to completion; an aborted consumer
   // (generator.return) skips this, so interrupted calls are not logged.
-  await logUsage(req.purpose, req.model, (lastUsage ?? {}) as TokenUsage);
-  return { draftContent: fullText, usage: lastUsage };
+  await logUsage(req.purpose, req.model, (usage ?? {}) as TokenUsage);
+  return { draftContent: fullText, usage };
 }

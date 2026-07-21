@@ -2,16 +2,48 @@
 
 > 首次记录：2026-07-18（Kimi K3 coding plan 额度用尽，工作中断）
 > 续做记录：2026-07-19（额度恢复，T12 收尾 + 缺陷修复完成）
+> 续做记录：2026-07-21（真实 API 验收准备：缓存断点 + 流式 usage 修复；**真实 API 受阻于无有效 key**）
 > 真相基准：以下状态由实跑 `tsc / vitest / eslint / build / curl smoke` 核实。
 
-## 当前验收命令实测状态（2026-07-19）
+## 当前验收命令实测状态（2026-07-21）
 
 | 命令 | 结果 |
 |---|---|
 | `npx tsc --noEmit` | ✅ 无错误 |
-| `npx vitest run` | ✅ 24 tests / 5 files 全绿 |
+| `npx vitest run` | ✅ 26 tests / 6 files 全绿 |
 | `npm run lint` | ✅ 无错误无警告 |
-| `npm run build` | ✅ 通过（Next.js 16.2.10 Turbopack，8 静态页 + 7 动态路由） |
+| `npm run build` | ✅ 通过（Next.js 16.2.10 Turbopack） |
+
+## 2026-07-21 续做内容
+
+### 代码修复（真实 API 路径的两个暗藏 bug，mock 测不出来）
+
+1. ✅ **生成请求从未设 cache 断点**：spec generate.md §2.1 要求 system（写作规范+百科合并前缀）为单个 cache 断点，但全代码无 `cache_control` → 真实 API 下 `cache_read_input_tokens` 永远为 0，§11 缓存验收必挂。已修：`client.ts` `callStreaming` 真实分支 system 改发 `[{type:"text", text, cache_control:{type:"ephemeral"}}]`。
+2. ✅ **流式 usage 采集位置错误**：旧代码读 `message_stop` 事件的 usage——该事件**不带 usage**（SDK types 证实），真实 API 下 ai_calls 会记全 0。已修：取最后一个 `message_delta` 的累计 usage（含 cache_read/cache_creation 字段），`message_start` 兜底。
+3. ✅ 新增 `src/lib/ai/client.real.test.ts`（SDK 整体 mock，2 tests）：断言 cache_control 数组发出、usage 取 delta 累计值、ai_calls 落库含 cacheReadTokens。
+
+### 真实 API 验收受阻（待用户补 key）
+
+- `.env.local` 的 `ANTHROPIC_API_KEY` 是占位符（`your_key_here`，13 字符），不是真 key。
+- 直连 `api.anthropic.com` → 403 `forbidden: Request not allowed`（区域限制特征）；本机常见代理端口（7890/7897/10809/1080…）均无监听；shell 环境里的 `ANTHROPIC_BASE_URL`（zenmux.ai 中转）连接超时。
+- **解锁方式**：把真实 key 填进 `.env.local` 的 `ANTHROPIC_API_KEY`（或配上可用代理/中转 `ANTHROPIC_BASE_URL`，SDK 自动读取）。代码侧已就绪，key 一到即可跑。
+
+### UI 页面 HTTP 级 smoke（MOCK_AI + tmp-ui.db 种子项目，curl 校验 200 + 关键内容）
+
+✅ `/projects`、`/projects/[id]`（摄取进度）、`/bible`、`/script`（3 场景节点）、`/write/[sceneId]`、`/design`、`/design/bible`、`/design/generate` 全部正常渲染；`/` 307→`/projects` 符合设计。**浏览器人工走查（交互操作）仍未做**，HTTP 级只证明不崩。
+
+### key 到位后的验收跑法（照抄即可）
+
+```bash
+MOCK_AI=0 DATABASE_URL=./tmp-real-api.db npx next dev --port 3100   # 临时库，勿污染 ./sqlite.db
+curl -F "name=西游记二创" -F "file=@fixtures/novels/xiyouji-12ch.txt" http://localhost:3100/api/works
+curl http://localhost:3100/api/works/<workId>/status                # 轮询至 done
+# 生成/续写/改写：POST /api/scenes/<sceneId>/generate {mode,instruction}，done 事件看 usage
+# 缓存命中：5 分钟内对同一 project 二次生成，ai_calls.cache_read_tokens 应 >0
+# 注意：system 前缀 <4096 token 时平台静默不缓存（tech-plan §5.2），命中率不达标则按 §5.2 回写缓存策略
+```
+
+场景节点无 API 路由（走 server actions），可用 node + better-sqlite3 直插 `storylines`/`scene_nodes`（tmp-ui.db 里 id=86 的项目有样例）。
 
 ## 2026-07-19 续做内容
 
@@ -58,7 +90,8 @@ T1~T11 全部完成并已提交（最新 `a24d0cd feat: T6-T11 upload/bible/scri
 
 ### 下次接手建议顺序
 
-1. 配 `ANTHROPIC_API_KEY`（`.env.local`），去掉 `MOCK_AI`，跑 §11 真实 API 验收。
-2. 顺手做 UI 人工走查（上面最后一条）。
-3. 跑 §5.4 对照实验并存档。
-4. （可选）缺陷#5 drain 互斥；`moveSceneNode` 双 update 也可包事务（与 deleteSceneNode 同模式，本次未动）。
+1. 把**真实** `ANTHROPIC_API_KEY` 填进 `.env.local`（现为占位符；本机直连 Anthropic 被区域 403，需 key 本身可直连或另配代理/中转 `ANTHROPIC_BASE_URL`）。
+2. 按上文「key 到位后的验收跑法」跑 §11 真实 API 验收（生成 800+ 字/续写/回退/缓存命中），结果回写 tech-plan §11。
+3. 顺手做浏览器 UI 人工走查（上传→百科浏览/编辑/锚点跳转；建 3+ 场景节点）。
+4. 跑 §5.4 对照实验（3 场景 × 3 次 × A/B 两组，B 组调 `assembleContext` 时 `bibleEntries: []` 即可）并存档 `fixtures/golden/rubric-YYYYMMDD.md`，盲评需人。
+5. （可选）缺陷#5 drain 互斥；`moveSceneNode` 双 update 也可包事务（与 deleteSceneNode 同模式，本次未动）。
