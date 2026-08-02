@@ -6,10 +6,14 @@ import {
   bibleEntries,
   storylines,
   sceneNodes,
-  ingestJobs,
+  sceneDrafts,
+  aiCalls,
 } from "@/lib/db/schema";
+import { sql } from "drizzle-orm";
 import fs from "node:fs";
 import path from "node:path";
+import { splitChapters } from "@/lib/ingest/split";
+import { indexWorkChunks } from "@/lib/retrieval/chunks";
 
 const FIXTURE_NOVEL_PATH = path.resolve("fixtures/novels/xiyouji-12ch.txt");
 
@@ -34,18 +38,21 @@ function ensureFixtureNovel() {
 async function seed() {
   ensureFixtureNovel();
 
-  // Clear tables in reverse dependency order
+  // Clear tables in reverse dependency order（先子表后父表）
+  await db.delete(sceneDrafts);
   await db.delete(sceneNodes);
   await db.delete(storylines);
   await db.delete(bibleEntries);
-  await db.delete(ingestJobs);
+  // FTS 索引表（drizzle 不建模，raw SQL 清理）
+  await db.run(sql`DELETE FROM chapter_chunks`);
   await db.delete(chapters);
   await db.delete(sourceWorks);
   await db.delete(projects);
+  await db.delete(aiCalls);
 
   const [project] = await db
     .insert(projects)
-    .values({ name: "西游记二创 Demo" })
+    .values({ name: "西游记二创 Demo", theme: "eastern" })
     .returning();
 
   const [work] = await db
@@ -54,25 +61,26 @@ async function seed() {
       projectId: project.id,
       title: "西游记",
       author: "吴承恩",
-      ingestStatus: "done",
     })
     .returning();
 
+  // 与上传路径同一个切分器（split.ts 支持「第一回」式中文数字，
+  // 不要自己写正则——曾因此只切出 1 章）
   const chapterContent = fs.readFileSync(FIXTURE_NOVEL_PATH, "utf-8");
-  const chapterRecords = chapterContent
-    .split(/(?=第\d+回)/)
-    .map((content, idx) => ({
-      workId: work.id,
-      seq: idx + 1,
-      title: content.split("\n")[0]?.replace("第", "第").trim() || `第${idx + 1}回`,
-      content,
-      charCount: content.length,
-    }))
-    .filter((c) => c.content.trim().length > 0)
-    .slice(0, 12);
+  const chapterRecords = splitChapters(chapterContent).map((chapter) => ({
+    workId: work.id,
+    seq: chapter.seq,
+    title: chapter.title,
+    content: chapter.content,
+    charCount: chapter.content.length,
+  }));
 
   await db.insert(chapters).values(chapterRecords);
 
+  // 与上传路径同一索引器：seed 项目的生成页也能跑原文检索
+  indexWorkChunks(db, work.id, chapterRecords);
+
+  // 演示条目即「用户手动维护的设定」（纯 RAG 摄取不再产生 extracted 条目）
   await db.insert(bibleEntries).values([
     {
       workId: work.id,
@@ -84,6 +92,7 @@ async function seed() {
       },
       anchors: [{ chapterSeq: 1, quote: "却说那花果山有一块仙石" }],
       confidence: 0.95,
+      origin: "user",
     },
     {
       workId: work.id,
@@ -98,6 +107,7 @@ async function seed() {
       },
       anchors: [{ chapterSeq: 1, quote: "化作一个石猴" }],
       confidence: 0.98,
+      origin: "user",
     },
     {
       workId: work.id,
@@ -110,6 +120,7 @@ async function seed() {
       },
       anchors: [{ chapterSeq: 1, quote: "产一石卵" }],
       confidence: 0.9,
+      origin: "user",
     },
   ]);
 

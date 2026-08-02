@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,7 +10,6 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 import {
   bibleEntries,
   chapters,
-  ingestJobs,
   projects,
   sceneDrafts,
   sceneNodes,
@@ -18,9 +17,8 @@ import {
   storylines,
 } from "@/lib/db/schema";
 
-// vitest 并行跑测试文件，而 pipeline.test.ts 等会用例会在 beforeEach 清空
-// 共享的 ./sqlite.db，互相干扰。这里复制一份独立 DB 副本，通过 DATABASE_URL
-// 让本文件的 db 连接指向副本，做到完全隔离。
+// 通过 DATABASE_URL 指向独立临时文件做隔离（表结构由 db/index.ts 的启动
+// 迁移自动创建，无需再复制 ./sqlite.db 副本）。
 let db: (typeof import("@/lib/db"))["db"];
 let createBibleEntry: (typeof import("./actions"))["createBibleEntry"];
 let updateBibleEntry: (typeof import("./actions"))["updateBibleEntry"];
@@ -32,10 +30,6 @@ let previousDbUrl: string | undefined;
 beforeAll(async () => {
   previousDbUrl = process.env.DATABASE_URL;
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bible-actions-"));
-  fs.copyFileSync(
-    path.resolve("sqlite.db"),
-    path.join(tempDir, "test.db")
-  );
   process.env.DATABASE_URL = path.join(tempDir, "test.db");
 
   ({ db } = await import("@/lib/db"));
@@ -55,12 +49,14 @@ afterAll(() => {
 });
 
 async function clearTables() {
-  // 先子表后父表（与 pipeline.test.ts 顺序一致）
+  // 先子表后父表
   await db.delete(sceneDrafts);
   await db.delete(sceneNodes);
   await db.delete(storylines);
   await db.delete(bibleEntries);
-  await db.delete(ingestJobs);
+  // FTS 索引表（drizzle 不建模，raw SQL 清理）
+  await db.run(sql`DELETE FROM chapter_chunks`);
+  await db.run(sql`DELETE FROM chapter_summaries`);
   await db.delete(chapters);
   await db.delete(sourceWorks);
   await db.delete(projects);
@@ -77,7 +73,6 @@ async function createFixtureWork() {
       projectId: project.id,
       title: "测试原作",
       author: "测试作者",
-      ingestStatus: "done",
     })
     .returning();
   await db.insert(chapters).values({

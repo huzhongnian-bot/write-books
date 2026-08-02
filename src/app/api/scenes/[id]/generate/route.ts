@@ -13,13 +13,14 @@ import {
   assembleContext,
   type PriorScene,
 } from "@/lib/ai/assemble-context";
-import { callStreaming } from "@/lib/ai/client";
+import { callStreaming, DEFAULT_MODEL } from "@/lib/ai/client";
+import { buildRetrievalTerms, searchChunks, searchSummaries } from "@/lib/retrieval/chunks";
 
 // Spec: docs/specs/generate.md §2.2 — SSE 三类事件 delta/done/error；
 // done 时落库 scene_drafts（ai_calls 由 client.ts 在完成时统一落库），
 // 客户端断开（request.signal aborted）即停止生成，半成品不落库。
 
-const GENERATE_MODEL = "claude-opus-4-8";
+const GENERATE_MODEL = DEFAULT_MODEL;
 const GENERATE_PURPOSE = "generate-scene";
 
 const requestBodySchema = z.object({
@@ -130,6 +131,15 @@ export async function POST(
     mode,
     instruction,
     baseDraft,
+    // 无模型 RAG：按场景显式引用（角色/伏笔/地点/标题）检索原作段落，
+    // 与百科显式引用并存注入 messages（spec §2.1；检索失败面=空数组，不影响生成）
+    retrievedChunks: work
+      ? searchChunks(work.id, buildRetrievalTerms(sceneNode))
+      : [],
+    // 两级 RAG 粗召回：概述检索兜底正文未字面命中的情节词（同 spec §2.1）
+    retrievedSummaries: work
+      ? searchSummaries(work.id, buildRetrievalTerms(sceneNode))
+      : [],
   });
 
   // spec §2.2: parentDraftId = baseDraftId ?? 该节点此前当前稿 id ?? null
@@ -194,7 +204,11 @@ export async function POST(
           })
           .returning();
 
-        send("done", { draftId: draft.id, usage: completed.usage ?? {} });
+        send("done", {
+          draftId: draft.id,
+          parentDraftId: draft.parentDraftId,
+          usage: completed.usage ?? {},
+        });
         close();
       } catch (err) {
         if (!clientGone) {

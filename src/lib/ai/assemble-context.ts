@@ -13,6 +13,20 @@ export interface PriorScene {
   currentDraft: SceneDraft | null;
 }
 
+/** 原作检索段落（src/lib/retrieval/chunks.ts 产出，注入 messages 动态部分） */
+export interface RetrievedChunk {
+  chapterSeq: number;
+  chapterTitle: string | null;
+  text: string;
+}
+
+/** 章节级检索命中的概述（两级 RAG 的粗召回层，正文未命中时由概述兜底） */
+export interface RetrievedSummary {
+  chapterSeq: number;
+  chapterTitle: string | null;
+  summary: string;
+}
+
 export interface AssembleContextInput {
   bibleEntries: BibleEntry[];
   sceneNode: SceneNode;
@@ -24,6 +38,10 @@ export interface AssembleContextInput {
   instruction: string;
   /** Explicit base draft for rewrite mode; defaults to currentDraft. */
   baseDraft?: SceneDraft | null;
+  /** 按场景关键词自原作 FTS 检索的段落；空/缺省时不加该小节 */
+  retrievedChunks?: RetrievedChunk[];
+  /** 按场景关键词自概述索引检索的章节概述；空/缺省时不加该小节 */
+  retrievedSummaries?: RetrievedSummary[];
 }
 
 export interface AssembledContext {
@@ -163,12 +181,12 @@ export function assembleContext(
     );
     return entry
       ? renderCharacterFull(entry)
-      : `《${name}》（百科中无此角色条目）`;
+      : `《${name}》（无设定条目，参考原作检索段落）`;
   });
 
   const foreshadows = foreshadowRefs.map((name) => {
     const entry = input.bibleEntries.find((e) => e.name === name);
-    return entry ? renderEntryCompact(entry) : `（百科中无条目：${name}）`;
+    return entry ? renderEntryCompact(entry) : `（无设定条目：${name}）`;
   });
 
   const sceneSection = [
@@ -190,6 +208,35 @@ export function assembleContext(
   if (foreshadows.length > 0) {
     parts.push(
       `## 需呼应的伏笔/设定\n${foreshadows.map((f) => `- ${f}`).join("\n")}`
+    );
+  }
+
+  // 两级 RAG（spec §2.1）：概述是章节级粗召回——检索词未字面命中正文时
+  // （如「背叛」这类情节词）由概述兜底给出相关章节大意；段落是精召回。
+  // 两者均属 messages 动态部分，不进 system 缓存前缀
+  if (input.retrievedSummaries && input.retrievedSummaries.length > 0) {
+    parts.push(
+      `## 原作章节概述（按本场景关键词自章节概述检索，供把握相关章节大意）\n` +
+        input.retrievedSummaries
+          .map(
+            (s) =>
+              `▸ 第${s.chapterSeq}章${s.chapterTitle ? `「${s.chapterTitle}」` : ""}：${s.summary}`
+          )
+          .join("\n")
+    );
+  }
+
+  // 无模型 RAG：FTS 关键词检索命中的原作段落，与显式引用并存（spec §2.1）。
+  // 属 messages 动态部分，不进 system 缓存前缀（每场景词不同，进了也必击穿缓存）
+  if (input.retrievedChunks && input.retrievedChunks.length > 0) {
+    parts.push(
+      `## 原作相关段落（按本场景关键词自原作检索，供贴合原作参考）\n` +
+        input.retrievedChunks
+          .map(
+            (chunk) =>
+              `▸ 第${chunk.chapterSeq}章${chunk.chapterTitle ? `「${chunk.chapterTitle}」` : ""}\n${chunk.text}`
+          )
+          .join("\n\n")
     );
   }
 

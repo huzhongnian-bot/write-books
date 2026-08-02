@@ -31,6 +31,72 @@ describe("splitChapters", () => {
     expect(chapters).toHaveLength(1);
     expect(chapters[0].seq).toBe(1);
   });
+
+  it("splits 卷X volume headers (实体书排版，无「第」字)", () => {
+    const text = `卷一   金狮的荣耀
+
+　　翻开召唤书第一页，跟随学徒走出黑暗城堡。
+
+卷二  雪狼VS梅杜莎
+
+　　背叛与战争的序曲就此拉开。
+`;
+    const chapters = splitChapters(text);
+    expect(chapters).toHaveLength(2);
+    expect(chapters[0].title).toContain("卷一");
+    expect(chapters[0].content).toContain("召唤书");
+    expect(chapters[1].title).toContain("卷二");
+    expect(chapters[1].content).toContain("序曲");
+  });
+
+  it("splits unnumbered section titles (前后空行的短行)", () => {
+    const text = `卷一 测试卷
+
+　　序场正文，铺陈背景与人物登场，内容足够长不会被当成标题。
+
+巨蟹座·兰迪斯
+
+　　黄昏的奥德赛，橙钢岩披上一层古朴的光芒，故事继续展开。
+
+双鱼座·乌德斯
+
+　　另一幕的正文内容。
+`;
+    const chapters = splitChapters(text);
+    expect(chapters).toHaveLength(3);
+    expect(chapters[1].title).toBe("巨蟹座·兰迪斯");
+    expect(chapters[1].content).toContain("黄昏的奥德赛");
+    expect(chapters[2].title).toBe("双鱼座·乌德斯");
+  });
+
+  it("ignores symbol-only separators, dialogue and sentence lines", () => {
+    const sep = "\uE788".repeat(3); // PUA 装饰符分隔线（真实文件场景）
+    const text = `卷一 测试卷
+
+　　第一段正文内容，长度足够。
+
+${sep}
+
+　　第二段正文内容，不应被分隔线切开。
+
+“……”
+
+　　短叙述句。
+
+　　收尾的正文内容。
+`;
+    const chapters = splitChapters(text);
+    expect(chapters).toHaveLength(1);
+    expect(chapters[0].content).toContain("第二段正文内容");
+    expect(chapters[0].content).toContain("收尾的正文内容");
+  });
+
+  it("strips stray U+FEFF so invisible lines are not treated as titles", () => {
+    const text = "卷一 测试卷\n\n\uFEFF\n\n　　正文内容。";
+    const chapters = splitChapters(text);
+    expect(chapters).toHaveLength(1);
+    expect(chapters[0].content).toContain("正文内容");
+  });
 });
 
 describe("decodeText", () => {
@@ -47,5 +113,30 @@ describe("decodeText", () => {
     expect(encoding).toBe("gbk");
     expect(text).toContain("正文内容");
     expect(text).toContain("第1回");
+  });
+
+  it("decodes UTF-16LE with BOM (Windows 记事本导出) instead of GBK mojibake", () => {
+    const body = Buffer.from("第1回 测试\n\n正文内容", "utf16le");
+    const buf = Buffer.concat([Buffer.from([0xff, 0xfe]), body]);
+    const { text, encoding } = decodeText(buf);
+    expect(encoding).toBe("utf-16le");
+    expect(text).toContain("正文内容");
+    expect(text).toContain("第1回");
+  });
+
+  it("decodes UTF-16BE with BOM", () => {
+    const body = Buffer.from("正文内容", "utf16le");
+    body.swap16();
+    const buf = Buffer.concat([Buffer.from([0xfe, 0xff]), body]);
+    const { text, encoding } = decodeText(buf);
+    expect(encoding).toBe("utf-16be");
+    expect(text).toContain("正文内容");
+  });
+
+  it("strips UTF-8 BOM", () => {
+    const buf = Buffer.from("﻿第1回 正文内容", "utf-8");
+    const { text, encoding } = decodeText(buf);
+    expect(encoding).toBe("utf-8");
+    expect(text.startsWith("第1回")).toBe(true);
   });
 });

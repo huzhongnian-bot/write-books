@@ -124,10 +124,18 @@ export function WriteWorkbench({
 
   function handleSelectDraft(value: string) {
     setSelectedDraftId(Number(value));
+    // 改选版本后，之前锁定的改写底稿不再适用，清除（仅「基于此稿重写」显式设置）
+    setBaseDraftId(null);
     // 切换查看历史稿时丢弃未保存的流式残留
     setStreamedText("");
     setStopped(false);
     setError(null);
+  }
+
+  function handleModeChange(value: string) {
+    setMode(value as Mode);
+    // 手动切换生成模式即放弃已锁定的改写底稿（UI 提示随 baseDraftId 清空而消失）
+    setBaseDraftId(null);
   }
 
   function handleRewriteFrom() {
@@ -149,6 +157,7 @@ export function WriteWorkbench({
     const finalInstruction = instruction.trim();
     let accumulated = "";
     let doneDraftId: number | null = null;
+    let doneParentDraftId: number | null = null;
     let doneUsage: UsageInfo | null = null;
 
     // 解析一个 SSE 事件块（event: xxx\ndata: {...}）
@@ -170,9 +179,11 @@ export function WriteWorkbench({
       } else if (event === "done") {
         const payload = JSON.parse(data) as {
           draftId: number;
+          parentDraftId: number | null;
           usage: UsageInfo;
         };
         doneDraftId = payload.draftId;
+        doneParentDraftId = payload.parentDraftId;
         doneUsage = payload.usage;
       } else if (event === "error") {
         const payload = JSON.parse(data) as { message: string };
@@ -222,16 +233,14 @@ export function WriteWorkbench({
       if (buffer.trim()) handleRawEvent(buffer);
 
       if (doneDraftId !== null) {
-        // 服务端已落库同内容的新稿，本地同步版本链（spec §2.3）
+        // 服务端已落库同内容的新稿，本地同步版本链（spec §2.3）；
+        // parentDraftId 以服务端 done 事件为准（服务端按 DB 最新稿判定，可能与本地选中稿不同）
         const newDraft: DraftItem = {
           id: doneDraftId,
           content: accumulated,
           instruction: finalInstruction,
           model: "",
-          parentDraftId:
-            mode === "rewrite"
-              ? (rewriteBase ?? selectedDraftId)
-              : selectedDraftId,
+          parentDraftId: doneParentDraftId,
           createdAt: new Date().toISOString(),
         };
         setDrafts((prev) => [newDraft, ...prev]);
@@ -239,7 +248,10 @@ export function WriteWorkbench({
         setStreamedText("");
         if (doneUsage) setLastUsage(doneUsage);
       } else {
-        throw new Error("生成中断，内容未保存");
+        // 服务端先落库再发 done，连接在 done 前断开时不一定是内容丢失
+        throw new Error(
+          "连接中断——若生成已完成，草稿可能已保存，请刷新页面查看版本链确认"
+        );
       }
     } catch (err) {
       if (controller.signal.aborted) {
@@ -382,7 +394,7 @@ export function WriteWorkbench({
             <Label>生成模式</Label>
             <Tabs
               value={mode}
-              onValueChange={(v) => setMode(v as Mode)}
+              onValueChange={handleModeChange}
               className="mt-1.5"
             >
               <TabsList className="grid w-full grid-cols-3">

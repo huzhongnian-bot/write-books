@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Sparkles, Trash2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -19,7 +19,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
-import { createSceneNode, deleteSceneNode, moveSceneNode } from "./actions";
+import { createSceneNode, deleteSceneNode, generateSceneDrafts, moveSceneNode } from "./actions";
 import { NodeForm } from "./node-form";
 
 /** 场景节点在客户端使用的可序列化形态（characterIds/foreshadowRefs 已解析为 name 数组） */
@@ -58,6 +58,8 @@ export function ScriptEditor({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [actionError, setActionError] = useState<string | null>(null);
+  // NodeForm 上报的未保存编辑状态：切换节点前需确认，避免静默丢失
+  const [formDirty, setFormDirty] = useState(false);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
 
@@ -65,6 +67,15 @@ export function ScriptEditor({
     nodeId === null
       ? `/projects/${projectId}/script`
       : `/projects/${projectId}/script?node=${nodeId}`;
+
+  const guardNodeSwitch = (e: React.MouseEvent) => {
+    if (
+      formDirty &&
+      !window.confirm("当前场景有未保存的修改，切换节点后将丢失。确定要切换吗？")
+    ) {
+      e.preventDefault();
+    }
+  };
 
   const runAction = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     setActionError(null);
@@ -75,6 +86,13 @@ export function ScriptEditor({
   };
 
   const handleCreate = () => {
+    // 新建即切换到新节点，同样守卫未保存编辑
+    if (
+      formDirty &&
+      !window.confirm("当前场景有未保存的修改，切换节点后将丢失。确定要切换吗？")
+    ) {
+      return;
+    }
     setActionError(null);
     startTransition(async () => {
       const res = await createSceneNode({ projectId });
@@ -89,6 +107,14 @@ export function ScriptEditor({
   const handleMove = (nodeId: number, direction: "up" | "down") =>
     runAction(() => moveSceneNode({ projectId, nodeId, direction }));
 
+  const handleAiDraft = () => {
+    setActionError(null);
+    startTransition(async () => {
+      const res = await generateSceneDrafts({ projectId });
+      if (!res.ok) setActionError(res.error);
+    });
+  };
+
   const handleDelete = (node: SceneNodeDTO) => {
     setActionError(null);
     startTransition(async () => {
@@ -99,6 +125,7 @@ export function ScriptEditor({
       }
       // 删除的是当前选中节点时，选中顺延到剩余的第一个
       if (selectedNodeId === node.id) {
+        setFormDirty(false);
         const rest = nodes.filter((n) => n.id !== node.id);
         router.push(selectHref(rest[0]?.id ?? null), { scroll: false });
       }
@@ -107,9 +134,59 @@ export function ScriptEditor({
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="border-b px-6 py-3">
-        <h1 className="text-lg font-semibold">脚本大纲</h1>
-        <p className="text-xs text-muted-foreground">剧情线：{storylineTitle}</p>
+      <header className="flex items-center justify-between border-b px-6 py-3">
+        <div>
+          <h1 className="text-lg font-semibold">脚本大纲</h1>
+          <p className="text-xs text-muted-foreground">剧情线：{storylineTitle}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Dialog>
+            <DialogTrigger
+              render={
+                <Button variant="outline" size="sm" disabled={isPending} />
+              }
+            >
+              <Sparkles className="mr-1 h-3.5 w-3.5" />
+              AI 场景草案
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>生成场景草案</DialogTitle>
+                <DialogDescription>
+                  将根据原作章节概述调用 AI 生成一批场景节点，追加到当前剧情线末尾（不覆盖已有节点）。需要先在项目页生成章节概述。
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose render={<Button variant="outline" />}>
+                  取消
+                </DialogClose>
+                <DialogClose
+                  render={<Button onClick={handleAiDraft} disabled={isPending} />}
+                >
+                  {isPending ? "生成中…" : "开始生成"}
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Link
+            href={`/projects/${projectId}/bible`}
+            className={buttonVariants({ variant: "ghost", size: "sm" })}
+          >
+            ← 返回百科
+          </Link>
+          <Link
+            href={`/projects/${projectId}`}
+            className={buttonVariants({ variant: "ghost", size: "sm" })}
+          >
+            返回项目
+          </Link>
+          <a
+            href={`/api/projects/${projectId}/export`}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            导出 TXT
+          </a>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -153,6 +230,7 @@ export function ScriptEditor({
                         <Link
                           href={selectHref(node.id)}
                           scroll={false}
+                          onClick={guardNodeSwitch}
                           className={cn(
                             "min-w-0 flex-1 truncate text-sm font-medium hover:text-primary",
                             selected && "text-primary"
@@ -222,6 +300,7 @@ export function ScriptEditor({
                         <Link
                           href={selectHref(node.id)}
                           scroll={false}
+                          onClick={guardNodeSwitch}
                           className="min-w-0 flex-1 truncate text-xs text-muted-foreground hover:text-foreground"
                         >
                           {summary}
@@ -248,6 +327,7 @@ export function ScriptEditor({
               projectId={projectId}
               node={selectedNode}
               bibleEntries={bibleEntries}
+              onDirtyChange={setFormDirty}
             />
           ) : (
             <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">

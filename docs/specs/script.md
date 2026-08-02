@@ -22,6 +22,15 @@
 - 右侧：选中节点的属性面板——`title`、`pov`、`characterIds`（从百科 character 条目 checkbox 勾选；该作品无 character 条目时允许逗号分隔手输）、`time`、`place`、`beats`（Textarea）、`foreshadowRefs`（从全部百科条目 checkbox 勾选）
 - 保存即持久化（Server Action + zod 校验），无需整页保存按钮（逐字段或逐面板保存均可，交互从简）
 - 每个节点提供「去生成」链接 → `/projects/[id]/write/[sceneId]`
+- 上下移动为同一 `db.transaction` 内的两次 update（同步回调），不留重复 seq
+- 切换/新建节点时若属性面板有未保存修改，须 `confirm` 提示，取消则不切换（key 重挂载会丢弃编辑）
+- header 提供「导出 TXT」（`GET /api/projects/[id]/export`：默认剧情线各节点当前稿按 seq 拼合为 TXT 下载，全项目无草稿返回 404）与「返回百科 / 返回项目」导航
+
+### 2.3 AI 场景草案（2026-08-01）
+
+- header「AI 场景草案」（Dialog 确认）→ Server Action `generateSceneDrafts`：取该作品全部章节概述（无概述则报错引导先去项目页生成）→ 单次 AI 调用（`SCRIPT_DRAFT_SYSTEM`，`purpose=script-draft`）产出 8~20 个场景的严格 JSON 数组（title/beats/place/pov/characters）→ zod 校验后**追加**到默认剧情线末尾（不覆盖已有节点，seq 续排，同步事务）
+- `characters` 直接用概述中的角色名，写入 `characterIds`（与 §2.1 的 name 约定一致，可直接驱动 RAG 检索词）；`foreshadowRefs` 留空由用户补
+- AI 输出解析失败（非合法 JSON）不落任何数据，报错重试；概述不全时基于已有概述生成是允许的（用户知情后自行增删）
 
 ## 三、验收标准
 

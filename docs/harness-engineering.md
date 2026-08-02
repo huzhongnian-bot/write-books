@@ -116,19 +116,16 @@ npm run dev          # 起 dev server
 src/lib/ai/
 ├── client.ts            # Anthropic client 单例；MOCK_AI=1 时返回 mock 实现
 ├── prompts/             # 每个 prompt 一个文件：模板 + 版本号 + changelog 注释
-│   ├── extract-chapter.ts
-│   ├── merge-entities.ts
-│   ├── summarize-arc.ts
-│   ├── generate-scene.ts
-│   └── judge-consistency.ts
-├── schemas/             # 抽取/生成的 zod schema（与 db schema 同源复用）
+│   └── generate-scene.ts
 ├── assemble-context.ts  # 上下文组装器：纯函数，输入结构化数据输出 messages
-└── mock/                # 录制的真实响应回放
+└── mock/                # 回放样文（流式 3 变体）
 ```
+
+（2026-07-29 纯 RAG 转向后，抽取类 prompt / 结构化输出 / 录制回放已随摄取管线移除；AI 调用面只剩流式生成。原文检索 harness 见 specs/ingest.md §2.2 与 `src/lib/retrieval/`。）
 
 两条铁律：
 
-1. **业务代码不直接 import `@anthropic-ai/sdk`**，只走封装层——模型升级、缓存策略调整、usage 记录都只改一处
+1. **业务代码不直接 import `openai`**，只走封装层——模型升级、缓存策略调整、usage 记录都只改一处
 2. **上下文组装器是纯函数**：`(bible, overlay, sceneNode, history, instruction) => messages`。可以单测（"角色 A 出场时其口吻样例必须在 messages 中"）、可以 snapshot（prompt 变更 diff 一目了然）、可以离线调试
 
 ### 4.2 Fixtures：不烧 token 的开发环境

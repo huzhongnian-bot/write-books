@@ -40,10 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local database & migrations
-/sqlite.db
-/drizzle
-/tmp-*.db
+# local database files
+/sqlite.db*
+/tmp-*.db*
 
 # Kimi Code project-local settings (machine-specific)
 .kimi-code/local.toml

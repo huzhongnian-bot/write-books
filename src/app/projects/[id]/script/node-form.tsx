@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,9 +30,15 @@ interface NodeFormProps {
   projectId: number;
   node: SceneNodeDTO;
   bibleEntries: BibleEntryOption[];
+  /** 受控字段与初始值不一致（有未保存编辑）时上报，供父组件在切换节点前确认 */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function NodeForm({ projectId, node, bibleEntries }: NodeFormProps) {
+function sameStringList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+export function NodeForm({ projectId, node, bibleEntries, onDirtyChange }: NodeFormProps) {
   const [title, setTitle] = useState(node.title);
   const [pov, setPov] = useState(node.pov ?? "");
   const [time, setTime] = useState(node.time ?? "");
@@ -66,6 +72,22 @@ export function NodeForm({ projectId, node, bibleEntries }: NodeFormProps) {
     () => new Map(bibleEntries.map((e) => [e.name, e.kind])),
     [bibleEntries]
   );
+
+  // 脏状态：受控字段与节点初始值比较（百科有角色条目时 manualCharacters 不参与保存，不计入）
+  const dirty =
+    title !== node.title ||
+    pov !== (node.pov ?? "") ||
+    time !== (node.time ?? "") ||
+    place !== (node.place ?? "") ||
+    beats !== node.beats ||
+    !sameStringList(characterIds, node.characterIds) ||
+    !sameStringList(foreshadowRefs, node.foreshadowRefs) ||
+    (characterOptions.length === 0 &&
+      manualCharacters !== node.characterIds.join("，"));
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   const toggleName = (list: string[], name: string, checked: boolean) =>
     checked ? [...list, name] : list.filter((v) => v !== name);

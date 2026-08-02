@@ -179,7 +179,7 @@ TXT 上传 → 章节切分 → 逐章 token 计数
 | 逐章批量抽取 | `claude-opus-4-8` 起步 | 量大后可用评测集对比 `claude-haiku-4-5`（$1/$5）的抽取质量，达标再降——**用数据决策，不拍脑袋**（评测机制见 harness 文档） |
 | 一致性检查、实体归一辅助 | `claude-haiku-4-5` | 判定类轻任务 |
 
-所有调用统一走 `src/lib/ai/` 封装层（TypeScript SDK `@anthropic-ai/sdk`），模型名、prompt、schema 都不散落在业务代码里——这是 harness 的挂载点。
+所有调用统一走 `src/lib/ai/` 封装层（OpenAI 兼容协议，`openai` SDK），模型名、prompt、schema 都不散落在业务代码里——这是 harness 的挂载点。
 
 ### 5.4 成本控制
 
@@ -235,7 +235,7 @@ P0 不做：登录（本地单用户）、支付、EPUB/PDF 解析、可视化�
 | UI | 现有 shadcn 组件 + `/design` 工作台（见 harness 文档） | `src/components/`, `src/app/(workspace)/` |
 | API | Route Handlers（`app/api/*/route.ts`），生成接口返回 SSE 流 | `src/app/api/` |
 | 变更操作 | Server Actions（表单/编辑类） | 就近 co-locate |
-| AI 层 | `@anthropic-ai/sdk` 封装：client、prompt 注册表、上下文组装器、mock 开关 | `src/lib/ai/` |
+| AI 层 | `openai` SDK 封装（OpenAI 兼容协议）：client、prompt 注册表、上下文组装器、mock 开关 | `src/lib/ai/` |
 | 数据 | SQLite + Drizzle（zod schema 单一来源），P1 迁 Postgres | `src/lib/db/` |
 | 后台任务 | 摄取 job：`ingest_jobs` 队列表 + 按需 drain（不用 Batch API、不用常驻 worker），P1 视部署形态决定是否引入独立 worker | `src/lib/ingest/` |
 | 密钥 | `ANTHROPIC_API_KEY` 仅存在于服务端环境变量 | `.env.local` |

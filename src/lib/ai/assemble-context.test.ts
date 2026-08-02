@@ -123,7 +123,7 @@ describe("assembleContext", () => {
     expect(system).toContain("龙王");
   });
 
-  it("百科条目缺失时角色与伏笔显式降级提示", () => {
+  it("设定条目缺失时角色与伏笔显式降级提示", () => {
     const { messages } = assembleContext({
       bibleEntries: [],
       sceneNode: makeNode(),
@@ -134,8 +134,8 @@ describe("assembleContext", () => {
     });
 
     const user = messages[0].content;
-    expect(user).toContain("《孙悟空》（百科中无此角色条目）");
-    expect(user).toContain("（百科中无条目：花果山）");
+    expect(user).toContain("《孙悟空》（无设定条目，参考原作检索段落）");
+    expect(user).toContain("（无设定条目：花果山）");
   });
 
   it("稳定前缀确定性：相同输入两次组装结果完全一致", () => {
@@ -227,6 +227,69 @@ describe("assembleContext", () => {
     expect(user).toContain("## 待改写稿\n历史稿内容。");
     expect(user).not.toContain("当前稿内容。");
     expect(user).toContain("局部改写");
+  });
+
+  it("检索段落：命中时注入「原作相关段落」小节，空数组则不加", () => {
+    const base = {
+      bibleEntries: [],
+      sceneNode: makeNode(),
+      currentDraft: null,
+      priorScenes: [],
+      mode: "instruct" as const,
+      instruction: "测试",
+    };
+
+    const { messages } = assembleContext({
+      ...base,
+      retrievedChunks: [
+        {
+          chapterSeq: 1,
+          chapterTitle: "第一回 石猴出世",
+          text: "内育仙胞，化作一个石猴。",
+        },
+        { chapterSeq: 3, chapterTitle: null, text: "无标题块。" },
+      ],
+    });
+
+    const user = messages[0].content;
+    expect(user).toContain("## 原作相关段落");
+    expect(user).toContain("▸ 第1章「第一回 石猴出世」\n内育仙胞，化作一个石猴。");
+    // 无标题块不带「」
+    expect(user).toContain("▸ 第3章\n无标题块。");
+
+    const empty = assembleContext({ ...base, retrievedChunks: [] });
+    expect(empty.messages[0].content).not.toContain("原作相关段落");
+  });
+
+  it("检索概述：命中时注入「原作章节概述」小节，空数组则不加", () => {
+    const base = {
+      bibleEntries: [],
+      sceneNode: makeNode(),
+      currentDraft: null,
+      priorScenes: [],
+      mode: "instruct" as const,
+      instruction: "测试",
+    };
+
+    const { messages } = assembleContext({
+      ...base,
+      retrievedSummaries: [
+        {
+          chapterSeq: 2,
+          chapterTitle: "巨蟹座·兰迪斯",
+          summary: "辰解救被囚禁的骑士兰迪斯，二人结下契约。",
+        },
+        { chapterSeq: 5, chapterTitle: null, summary: "无标题概述。" },
+      ],
+    });
+
+    const user = messages[0].content;
+    expect(user).toContain("## 原作章节概述");
+    expect(user).toContain("▸ 第2章「巨蟹座·兰迪斯」：辰解救被囚禁的骑士兰迪斯");
+    expect(user).toContain("▸ 第5章：无标题概述。");
+
+    const empty = assembleContext({ ...base, retrievedSummaries: [] });
+    expect(empty.messages[0].content).not.toContain("原作章节概述");
   });
 
   it("instruct 模式：无前文无角色时仅含场景与写作指令", () => {

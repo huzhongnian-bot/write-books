@@ -78,19 +78,27 @@ export default async function BiblePage({
 
   return (
     <main className="container mx-auto max-w-5xl px-4 py-10">
-      <Link
-        href={`/projects/${project.id}`}
-        className={buttonVariants({ variant: "ghost", size: "sm" })}
-      >
-        ← 返回项目
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link
+          href={`/projects/${project.id}`}
+          className={buttonVariants({ variant: "ghost", size: "sm" })}
+        >
+          ← 返回项目
+        </Link>
+        <Link
+          href={`/projects/${project.id}/script`}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          下一步：编脚本 →
+        </Link>
+      </div>
 
       <header className="mt-4 space-y-1">
         <h1 className="text-2xl font-bold tracking-tight">原作百科</h1>
         <p className="text-sm text-muted-foreground">
           {work.title}
           {work.author ? ` · ${work.author}` : ""}，共 {total}{" "}
-          条。「已校订」为修正抽取结果，「二创设定」为偏离原作的自建设定。
+          条。百科条目均为手动维护的二创设定，生成时优先于原作检索内容。
         </p>
       </header>
 

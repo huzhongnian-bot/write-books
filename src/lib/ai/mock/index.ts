@@ -1,69 +1,35 @@
-import type { StructuredRequest, StreamingRequest, AiMessage } from "../client";
-import fs from "node:fs";
-import path from "node:path";
-
-const RECORDINGS_DIR = path.resolve("fixtures/recordings");
+import type { StreamingRequest, AiMessage } from "../client";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function findRecording(purpose: string): unknown | null {
-  if (!fs.existsSync(RECORDINGS_DIR)) return null;
+// ------------------------------------------------------------------
+// 流式生成：西游记风格通用场景正文（无具体新剧情，任何场景演示都不违和），
+// 半文半白、有对话有动作。对最后一条 message 做稳定 hash 选变体，
+// 同一输入输出恒定。
+// ------------------------------------------------------------------
 
-  const files = fs.readdirSync(RECORDINGS_DIR);
-  const match = files.find((f) => f.startsWith(purpose) && f.endsWith(".json"));
-  if (!match) return null;
+const STREAM_VARIANTS = [
+  "话说一行人离了旧路，转过山凹，只见前面峰峦叠翠，涧水潺潺，松荫里隐约露出几间茅庵。行者道：“师父且住，待老孙前去看来，莫教又是甚妖怪设的圈套。”三藏勒住马道：“徒弟，你须仔细，不可莽撞。”行者答应一声，纵起云头，落在庵前，见一老翁正在篱边锄菜，便拱手问道：“老官儿，此处是甚地名？前程可好走么？”老翁抬头笑道：“长老们远来辛苦。这山唤做清风岭，转过岭去，便是平阳大道，只是天色将晚，林间多有毒虫猛兽，不若在小庵歇宿一宵，明日早行。”行者谢了，回至马前，把言语备细说了一遍。三藏闻言甚喜，师徒们遂投茅庵而来。那老翁迎出门外，唤童子烹茶煮饭，款待殷勤。八戒早掀唇咧嘴道：“阿弥陀佛，今日却是有缘，担了半日饥渴，才得这一顿现成素斋。”沙僧笑道：“二哥，你且斯文些，莫教主人笑话。”四人用毕斋饭，老翁又取出一盘山果，红艳艳如新摘的仙桃。三藏道：“贫僧叨扰太多，何以克当？”老翁道：“圣僧远来，山野之人无甚孝敬，聊表寸心耳。”当夜月白风清，师徒们就在庵中安歇，一宿无话。次早天明，行者起来收拾马匹行李，辞了老翁，保护三藏上了大路。正是：山高自有客行路，水深自有渡人船。",
+  "且说三藏师徒行了多时，腹中渐渐饥饿。三藏道：“徒弟们，此处前不着村，后不着店，那里去化些斋饭充饥？”行者举目四望，笑道：“师父莫忧，你看那东南角上，炊烟袅袅，定有人家，待老孙去化一盂来。”说罢，捻着诀，驾起筋斗云，霎时到了庄前。只见竹篱茅舍，柴扉半掩，一个老婆婆正在门前纺线。行者上前，打个问讯道：“婆婆，贫僧是东土大唐差往西天取经的，行至此间，腹中饥馁，特来化一顿斋饭。”婆婆道：“长老，小庄人家，只有些粗茶淡饭，若不嫌菲薄，请里面坐。”行者道：“出家人不在精粗，但得一饱足矣。”婆婆遂唤儿媳搬出几碟腌菜，一钵粟米饭，一壶清茶。行者谢了，把饭食收拾在钵盂里，径回大路。八戒远远望见，欢喜道：“来了来了！猴哥这遭化得斋，却有我的份！”沙僧道：“二哥先莫嚷，让师父先用。”三藏用了些，余者分与三个徒弟。八戒端起钵盂，呼噜噜几口咽下，抹嘴笑道：“好吃是好吃，只是少了些，不够老猪塞牙缝的。”行者骂道：“呆子，化来的斋饭，还嫌多少！”三藏道：“悟能，休要争多嫌少，赶路要紧。”师徒们收拾钵盂，牵马挑担，望西而行。但见：野渡无人舟自横，斜阳芳草路迢迢。",
+  "话表三藏师徒，正行之间，忽然天色变了：西北上乌云四起，霎时间电闪雷鸣，大雨倾盆。行者道：“师父，雨来了，前面山崖下有一座古庙，且去避一避。”师徒们忙奔至庙前，见那庙门户凋零，神像剥落，蛛网尘封，荒凉得紧。八戒放下钉钯，埋怨道：“偏是老猪挑担时下雨！这破庙漏得筛子一般，如何安歇？”行者道：“呆子莫抱怨，有瓦遮头，胜似淋在野地里。”沙僧牵着马，拴在廊下，又寻些干草来喂了。行者跳上殿脊，把几处漏雨的瓦片扶正，又拔毫毛变作几张干柴，落地生火。三藏居中坐了，合掌道：“善哉，有此一炬之火，正好烤干湿衣。”火光映着四壁，把师徒四人的影子，摇摇晃晃照在墙上。八戒凑近火边，烤着半边身子，口里嘟哝道：“这等大雨，山路泥泞，明日如何走得？”三藏道：“徒弟，休虑明日之事。出门在外，风餐露宿，原是本分，只恐误了取经的期限。”行者笑道：“师父放心，老孙纵云先去探路，包管不误。”说话间，雨声渐歇，云缝里透出月光。沙僧道：“雨住了，师父，趁着凉快，安歇罢。”师徒们遂在殿上各自睡了。正是：风雨途中休怨苦，残云收尽是青天。",
+];
 
-  const raw = fs.readFileSync(path.join(RECORDINGS_DIR, match), "utf-8");
-  return JSON.parse(raw);
+function pickStreamVariant(messages: AiMessage[]): string {
+  const content = messages[messages.length - 1]?.content ?? "";
+  let hash = 0;
+  for (let i = 0; i < content.length; i++) {
+    hash += content.charCodeAt(i);
+  }
+  return STREAM_VARIANTS[hash % STREAM_VARIANTS.length];
 }
 
 export const mockClient = {
-  async callStructured<T>(req: StructuredRequest<T>): Promise<T> {
-    const recording = findRecording(req.purpose);
-    if (recording) {
-      return req.schema.parse(recording);
-    }
-
-    // Default mock responses by purpose
-    if (req.purpose === "extract-chapter") {
-      return req.schema.parse({
-        summary: "本章为 fixture 占位摘要。",
-        characters: ["孙悟空"],
-        events: ["石猴出世"],
-        settingClues: ["花果山"],
-      });
-    }
-
-    if (req.purpose === "summarize-arc") {
-      return req.schema.parse({
-        bibleEntries: [
-          {
-            kind: "character",
-            name: "孙悟空",
-            data: {
-              aliases: ["石猴"],
-              personality: "机智果敢",
-              abilities: ["七十二变"],
-              speechPatternSamples: [],
-            },
-            anchors: [{ chapterSeq: 1, quote: "化作一个石猴" }],
-            confidence: 0.9,
-          },
-        ],
-      });
-    }
-
-    throw new Error(`No mock recording for purpose: ${req.purpose}`);
-  },
-
   async* callStreaming(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _req: StreamingRequest
+    req: StreamingRequest
   ): AsyncGenerator<string, { draftContent: string; usage: unknown }, void> {
-    const text =
-      "却说那石猴睁开双眼，目运两道金光，射冲斗府。众猴见之，皆拜伏在地，齐声称他为美猴王。";
+    const text = pickStreamVariant(req.messages);
     const chunkSize = 4;
 
     for (let i = 0; i < text.length; i += chunkSize) {
@@ -75,12 +41,9 @@ export const mockClient = {
       draftContent: text,
       usage: {
         input_tokens: 1000,
-        output_tokens: 50,
+        output_tokens: Math.ceil(text.length / 2),
         cache_read_input_tokens: 900,
       },
     };
   },
-
-  // Exported for tests that need to assert on message shape
-  messages: {} as Record<string, AiMessage[]>,
 };

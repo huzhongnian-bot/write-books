@@ -1,7 +1,9 @@
 # 技术方案（v1.1）— 2000 Credit 落地版
 
-> 基于 [product-design.md](./product-design.md) v0.3 产出的实施技术方案。
-> **硬约束：全部实现工作由 Qoder 完成，总预算 2000 credit。** 本文档的每个技术决策都以此为第一约束——凡是"工程上更漂亮但更费 credit"的选项一律延后。
+> **⚠️ 已归档（2026-07-25）**：本文是面向 Qoder credit 预算的*实施计划*，预算模型与记账均已失效（执行者其后切换为 Kimi Code）。**当前架构以 [architecture.md](./architecture.md) 为准**，验收基准以 [specs/](./specs/) 为准。本文保留作历史决策记录（ADR-001~005、降级清单等推理仍有效）。
+>
+> ~~基于 [product-design.md](./product-design.md) v0.3 产出的实施技术方案。~~
+> ~~**硬约束：全部实现工作由 Qoder 完成，总预算 2000 credit。**~~
 >
 > 配套：[harness-engineering.md](./harness-engineering.md)（本版仅落地其最小子集，见 §9）
 
@@ -77,7 +79,7 @@
 │  /…/write     ─ SSE ────▶  POST /api/scenes/:id/generate│
 │                             GET  /api/works/:id/status │
 │                    │                                  │
-│              src/lib/ai/  ◀── 唯一的 @anthropic-ai/sdk │
+│              src/lib/ai/  ◀── 唯一的 openai SDK 出入口  │
 │              （client / prompts / assembler / mock）    │
 │                    │                                  │
 │              src/lib/db/  SQLite (better-sqlite3)      │

@@ -12,21 +12,6 @@ import { z } from "zod";
 // Enums (stored as text, validated with zod)
 // ------------------------------------------------------------------
 
-export const sourceWorkIngestStatusEnum = z.enum([
-  "idle",
-  "running",
-  "done",
-  "failed",
-]);
-
-export const ingestJobKindEnum = z.enum(["extract", "summary"]);
-export const ingestJobStatusEnum = z.enum([
-  "pending",
-  "running",
-  "done",
-  "failed",
-]);
-
 export const bibleEntryKindEnum = z.enum([
   "setting",
   "character",
@@ -35,9 +20,22 @@ export const bibleEntryKindEnum = z.enum([
   "timeline_event",
 ]);
 
-// ADR-005: origin × editedByUser distinguishes extracted-untouched /
-// corrected (extracted + editedByUser) / user-created fanon ("user").
+// 纯 RAG 摄取（2026-07-29）后不再产生 extracted 条目，但旧库可能存有
+// 抽取时代的条目，枚举保持两值；editedByUser 的校订语义见 docs/specs/bible.md
 export const bibleEntryOriginEnum = z.enum(["extracted", "user"]);
+
+// 项目皮肤主题（文学题材换肤，见 docs/specs/theme.md）：
+// default=不换肤，其余五套对应 校园/西方幻想/东方武侠/都市/星际科幻。
+// 新增主题须三处同步：本枚举、globals.css 的 [data-theme] token 块、
+// src/lib/themes.ts 的 PROJECT_THEME_OPTIONS。
+export const projectThemeEnum = z.enum([
+  "default",
+  "campus",
+  "western",
+  "eastern",
+  "urban",
+  "scifi",
+]);
 
 // ------------------------------------------------------------------
 // Tables
@@ -46,6 +44,8 @@ export const bibleEntryOriginEnum = z.enum(["extracted", "user"]);
 export const projects = sqliteTable("projects", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
+  // 文学题材皮肤（projectThemeEnum），项目工作区（detail/bible/script/write）按此换肤
+  theme: text("theme").notNull().default("default"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -58,10 +58,6 @@ export const sourceWorks = sqliteTable("source_works", {
     .references(() => projects.id),
   title: text("title").notNull(),
   author: text("author"),
-  ingestStatus: text("ingest_status")
-    .notNull()
-    .default("idle"),
-  ingestError: text("ingest_error"),
 });
 
 export const chapters = sqliteTable("chapters", {
@@ -73,26 +69,15 @@ export const chapters = sqliteTable("chapters", {
   title: text("title"),
   content: text("content").notNull(),
   charCount: integer("char_count").notNull().default(0),
+  // AI 章节概述（可选，上传后按需生成，docs/specs/ingest.md §2.4）：
+  // 两级 RAG 的章节级检索面 + 脚本草案输入 + 生成前情注入
+  summary: text("summary"),
 });
 
-export const ingestJobs = sqliteTable("ingest_jobs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  workId: integer("work_id")
-    .notNull()
-    .references(() => sourceWorks.id),
-  chapterId: integer("chapter_id").references(() => chapters.id),
-  kind: text("kind").notNull(),
-  status: text("status").notNull().default("pending"),
-  result: text("result", { mode: "json" }),
-  error: text("error"),
-  attemptCount: integer("attempt_count").notNull().default(0),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+// 章节分块检索索引 chapter_chunks 是 FTS5 虚拟表（drizzle 不建模），
+// 见 drizzle/0003_chapter_chunks.sql 与 src/lib/retrieval/chunks.ts。
+// 章节概述检索索引 chapter_summaries 同为 FTS5 虚拟表，
+// 见 drizzle/0006_chapter_summaries.sql 与 src/lib/retrieval/chunks.ts。
 
 export const bibleEntries = sqliteTable("bible_entries", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -160,78 +145,12 @@ export const aiCalls = sqliteTable("ai_calls", {
   inputTokens: integer("input_tokens"),
   outputTokens: integer("output_tokens"),
   cacheReadTokens: integer("cache_read_tokens"),
+  // 失败埋点：调用失败时记录分类后的可读原因（成功调用为 null，tokens 反向留空）
+  error: text("error"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
-
-// ------------------------------------------------------------------
-// Structured data schemas (zod) — shared by DB inserts, API validation,
-// and AI structured outputs
-// ------------------------------------------------------------------
-
-export const anchorSchema = z.object({
-  chapterSeq: z.number(),
-  quote: z.string(),
-});
-
-export const settingDataSchema = z.object({
-  type: z.string(),
-  content: z.string(),
-});
-
-export const characterDataSchema = z.object({
-  aliases: z.array(z.string()).default([]),
-  personality: z.string(),
-  abilities: z.array(z.string()).default([]),
-  speechPatternSamples: z.array(z.string()).default([]),
-  growthArc: z.string().optional(),
-});
-
-export const relationshipDataSchema = z.object({
-  source: z.string(),
-  target: z.string(),
-  type: z.string(),
-  evolution: z.string(),
-});
-
-export const plotArcDataSchema = z.object({
-  arcType: z.enum(["main", "side"]),
-  summary: z.string(),
-  keyTurningPoints: z.array(z.number()),
-});
-
-export const timelineEventDataSchema = z.object({
-  time: z.string(),
-  event: z.string(),
-});
-
-// P0: data column accepts any JSON object; per-kind schemas are used for AI structured outputs and runtime validation
-export const bibleEntryDataSchema = z.record(z.string(), z.unknown());
-
-export const extractChapterResultSchema = z.object({
-  summary: z.string(),
-  characters: z.array(z.string()),
-  events: z.array(z.string()),
-  settingClues: z.array(z.string()),
-});
-
-export const summaryResultSchema = z.object({
-  bibleEntries: z.array(
-    z.object({
-      kind: bibleEntryKindEnum,
-      name: z.string(),
-      data: z.record(z.string(), z.unknown()),
-      anchors: z.array(anchorSchema).default([]),
-      confidence: z.number().min(0).max(1),
-    })
-  ),
-});
-
-export const ingestJobResultSchema = z.union([
-  extractChapterResultSchema,
-  summaryResultSchema,
-]);
 
 // ------------------------------------------------------------------
 // Derived zod schemas from Drizzle tables
@@ -245,9 +164,6 @@ export const selectSourceWorkSchema = createSelectSchema(sourceWorks);
 
 export const insertChapterSchema = createInsertSchema(chapters);
 export const selectChapterSchema = createSelectSchema(chapters);
-
-export const insertIngestJobSchema = createInsertSchema(ingestJobs);
-export const selectIngestJobSchema = createSelectSchema(ingestJobs);
 
 export const insertBibleEntrySchema = createInsertSchema(bibleEntries);
 export const selectBibleEntrySchema = createSelectSchema(bibleEntries);
@@ -276,9 +192,6 @@ export type InsertSourceWork = typeof sourceWorks.$inferInsert;
 
 export type Chapter = typeof chapters.$inferSelect;
 export type InsertChapter = typeof chapters.$inferInsert;
-
-export type IngestJob = typeof ingestJobs.$inferSelect;
-export type InsertIngestJob = typeof ingestJobs.$inferInsert;
 
 export type BibleEntry = typeof bibleEntries.$inferSelect;
 export type InsertBibleEntry = typeof bibleEntries.$inferInsert;

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { projects, sourceWorks } from "@/lib/db/schema";
-import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -20,18 +19,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { UploadForm } from "./upload-form";
+import { DeleteProjectButton } from "./delete-project-button";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_MAP: Record<
-  string,
-  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
-> = {
-  idle: { label: "未开始", variant: "outline" },
-  running: { label: "摄取中", variant: "default" },
-  done: { label: "已完成", variant: "secondary" },
-  failed: { label: "摄取失败", variant: "destructive" },
-};
 
 export default async function ProjectsPage() {
   const rows = await db
@@ -40,7 +30,6 @@ export default async function ProjectsPage() {
       name: projects.name,
       createdAt: projects.createdAt,
       workId: sourceWorks.id,
-      ingestStatus: sourceWorks.ingestStatus,
     })
     .from(projects)
     .leftJoin(sourceWorks, eq(sourceWorks.projectId, projects.id))
@@ -55,14 +44,14 @@ export default async function ProjectsPage() {
     <main className="container mx-auto max-w-4xl px-4 py-10">
       <h1 className="text-2xl font-bold tracking-tight">项目</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        上传 TXT 原作，自动摄取生成原作百科。
+        上传 TXT 原作，自动切分章节并建立全文检索，为二创生成提供原作上下文。
       </p>
 
       <Card className="mt-8">
         <CardHeader>
           <CardTitle className="text-base">上传原作</CardTitle>
           <CardDescription>
-            支持 UTF-8 / GBK 编码的 TXT 文件，上限 60 章、50 万字。
+            支持 UTF-8 / UTF-16 / GBK 编码的 TXT 文件，上限 2000 章、1000 万字。上传即完成，无需等待。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -84,41 +73,60 @@ export default async function ProjectsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>名称</TableHead>
-                  <TableHead>状态</TableHead>
                   <TableHead>创建时间</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {projectRows.map((row) => {
-                  const status = STATUS_MAP[row.ingestStatus ?? "idle"];
-                  return (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-medium">{row.name}</TableCell>
-                      <TableCell>
-                        <Badge variant={status.variant}>{status.label}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {row.createdAt.toLocaleString("zh-CN", {
-                          hour12: false,
-                        })}
-                      </TableCell>
-                      <TableCell className="text-right">
+                {projectRows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell>
+                      {row.createdAt.toLocaleString("zh-CN", {
+                        hour12: false,
+                      })}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
                         {row.workId !== null && (
-                          <Link
-                            href={`/projects/${row.id}`}
-                            className={buttonVariants({
-                              variant: "outline",
-                              size: "sm",
-                            })}
-                          >
-                            查看进度
-                          </Link>
+                          <>
+                            <Link
+                              href={`/projects/${row.id}`}
+                              className={buttonVariants({
+                                variant: "outline",
+                                size: "sm",
+                              })}
+                            >
+                              章节
+                            </Link>
+                            <Link
+                              href={`/projects/${row.id}/bible`}
+                              className={buttonVariants({
+                                variant: "outline",
+                                size: "sm",
+                              })}
+                            >
+                              百科
+                            </Link>
+                            <Link
+                              href={`/projects/${row.id}/script`}
+                              className={buttonVariants({
+                                variant: "outline",
+                                size: "sm",
+                              })}
+                            >
+                              脚本
+                            </Link>
+                          </>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                        <DeleteProjectButton
+                          projectId={row.id}
+                          projectName={row.name}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           )}

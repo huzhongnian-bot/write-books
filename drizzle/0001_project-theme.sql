@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `theme` text DEFAULT 'default' NOT NULL;

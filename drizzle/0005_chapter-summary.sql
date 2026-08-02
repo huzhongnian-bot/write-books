@@ -1,0 +1,1 @@
+ALTER TABLE `chapters` ADD `summary` text;
