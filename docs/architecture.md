@@ -59,7 +59,7 @@ POST /api/works → decodeText(UTF-8→GBK 探测) → splitChapters（「第X�
 ## 五、AI 层（`src/lib/ai/`）
 
 - `client.ts`：唯一 SDK 出入口，仅流式生成（`callStreaming`）。懒单例；`timeout 120s`、`maxRetries 1`；真实/流式调用统一经 `toReadableAiError` 分类为可行动中文提示（连接超时/断连先于 status 分支——SDK 超时是 status=undefined 的 `APIConnectionError`；401→key 无效；403→区域限制配中转；404→模型或路径；429→限流；5xx→稍后重试）；失败调用落 `ai_calls.error` 埋点（埋点自身失败不掩盖原始错误）
-- **模型与端点**：模型名统一取 `DEFAULT_MODEL`（env `AI_MODEL`，默认 `anthropic/claude-sonnet-4.5`），业务代码不写死；接入走 OpenAI 兼容协议（`openai` SDK），端点/key 取 SDK 标准 `OPENAI_BASE_URL`/`OPENAI_API_KEY`。已验证可用：ZenMux 聚合网关 `https://zenmux.ai/api/v1`（模型名 `provider/model`，支持流式、`stream_options.include_usage`、`prompt_tokens_details.cached_tokens` 缓存观测；境外端点需代理，`HTTP(S)_PROXY` 存在时 client 自动启用 undici 进程级代理）
+- **模型与端点**：模型名统一取 `DEFAULT_MODEL`（env `AI_MODEL`，默认 `anthropic/claude-sonnet-4.5`），业务代码不写死；接入走 OpenAI 兼容协议（`openai` SDK），端点/key 取 SDK 标准 `OPENAI_BASE_URL`/`OPENAI_API_KEY`。已验证可用：ZenMux 聚合网关 `https://zenmux.ai/api/v1`（模型名 `provider/model`，支持流式、`stream_options.include_usage`、`prompt_tokens_details.cached_tokens` 缓存观测；境外端点需代理，`AI_PROXY_URL` 存在时只给 AI 调用挂 undici ProxyAgent——不用全局 dispatcher，避免波及 Next 自身 fetch）
 - `mock/`：`MOCK_AI=1` 时流式生成按指令稳定 hash 选 3 变体样文，30ms/chunk（结构化调用与录制回放已随抽取管线移除）
 
 ## 六、前端地图

@@ -91,6 +91,32 @@ ${sep}
     expect(chapters[0].content).toContain("收尾的正文内容");
   });
 
+  it("ignores RP asterisk narration and quoted dialogue lines (角色扮演格式)", () => {
+    const text = `第 1 章
+
+*他挑了挑眉，嘴角勾起一个挑衅的弧度。*
+
+　　正文第一段内容，长度足够不会被当成标题。
+
+*我操。*
+
+　　正文第二段内容，不应被星号旁白切开。
+
+"你右手咋了？我看看？"
+
+　　正文第三段内容，不应被对话行切开。
+
+第 2 章
+
+　　第二部分正文内容。
+`;
+    const chapters = splitChapters(text);
+    expect(chapters).toHaveLength(2);
+    expect(chapters[0].title).toBe("第 1 章");
+    expect(chapters[0].content).toContain("正文第三段内容");
+    expect(chapters[1].title).toBe("第 2 章");
+  });
+
   it("strips stray U+FEFF so invisible lines are not treated as titles", () => {
     const text = "卷一 测试卷\n\n\uFEFF\n\n　　正文内容。";
     const chapters = splitChapters(text);

@@ -15,7 +15,8 @@ const SECTION_TITLE_MAX_CHARS = 20;
 
 /**
  * 小节标题启发式：前后皆空行的短行（≤20 字），且不像正文——
- * 不以引号/破折号/书名号开头（对话、标记线），不以句读结尾（叙述句）。
+ * 不以引号/破折号/书名号/星号开头（对话、标记线、RP 星号旁白），
+ * 不以句读或星号结尾（叙述句、RP 旁白常以 *…* 包裹，如「*他挑了挑眉。*」）。
  * 用于没有「第X章」编号的实体书小节（如「巨蟹座·兰迪斯」场景题）。
  * 误伤面：诗歌单行/金句独立行可能被当作标题，只会多切、不会丢字，可接受。
  */
@@ -26,8 +27,8 @@ function isSectionTitle(lines: string[], i: number): boolean {
 
   const t = lines[i].trim();
   if (t.length < 2 || t.length > SECTION_TITLE_MAX_CHARS) return false;
-  if (/^[“「『《——]/.test(t)) return false;
-  if (/[。，！？；：、…—”」』]$/.test(t)) return false;
+  if (/^[“「『《——*"']/.test(t)) return false;
+  if (/[。，！？；：、…—”」』*"']$/.test(t)) return false;
   // 必须含至少一个文字字符：排除纯符号分隔线（如本书的 PUA 装饰符行、*** 等）
   if (!/[一-鿿A-Za-z0-9]/.test(t)) return false;
   return true;

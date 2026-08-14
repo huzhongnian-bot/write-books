@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { ProxyAgent } from "undici";
 import { db } from "@/lib/db";
 import { aiCalls } from "@/lib/db/schema";
 import { mockClient } from "./mock";
@@ -18,23 +18,18 @@ export const DEFAULT_MODEL = process.env.AI_MODEL ?? "anthropic/claude-sonnet-4.
 // transitively imports this file when no API key is present (e.g. UI-only dev).
 let realClient: OpenAI | null = null;
 
-let proxyReady = false;
 /**
- * 进程级 HTTP 代理：仅在显式配置了 HTTP(S)_PROXY 时启用（如本机
- * Clash 127.0.0.1:7897，ZenMux 等境外端点需要）。EnvHttpProxyAgent
- * 同时读取 NO_PROXY；作用于全局 fetch（含 SDK），不配置时零影响。
+ * AI 调用专用代理：env `AI_PROXY_URL`（如本机 Clash `http://127.0.0.1:7897`，
+ * ZenMux 等境外端点需要）。刻意不用全局 dispatcher / HTTP(S)_PROXY——
+ * 进程级代理会波及 Next 自身的 fetch（如构建期 Google Fonts 下载），
+ * 代理只挂给 OpenAI client 的 fetch，不配置时零影响。
  */
-function ensureEnvProxy() {
-  if (proxyReady) return;
-  proxyReady = true;
-  const hasProxy =
-    process.env.HTTPS_PROXY ??
-    process.env.https_proxy ??
-    process.env.HTTP_PROXY ??
-    process.env.http_proxy;
-  if (hasProxy) {
-    setGlobalDispatcher(new EnvHttpProxyAgent());
-  }
+function buildProxyFetch(): typeof fetch | undefined {
+  const proxyUrl = process.env.AI_PROXY_URL;
+  if (!proxyUrl) return undefined;
+  const dispatcher = new ProxyAgent(proxyUrl);
+  return ((input: RequestInfo | URL, init?: RequestInit) =>
+    fetch(input, { ...init, dispatcher } as RequestInit)) as typeof fetch;
 }
 
 function getRealClient(): OpenAI {
@@ -45,13 +40,13 @@ function getRealClient(): OpenAI {
     );
   }
   if (!realClient) {
-    ensureEnvProxy();
     // 默认单次调用最坏耗时 = timeout × (1 + maxRetries) = 240s
     realClient = new OpenAI({
       apiKey,
       baseURL: process.env.OPENAI_BASE_URL,
       timeout: 120_000,
       maxRetries: 1,
+      fetch: buildProxyFetch(),
     });
   }
   return realClient;

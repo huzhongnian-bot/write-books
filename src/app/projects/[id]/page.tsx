@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { chapters, projects, sourceWorks } from "@/lib/db/schema";
+import { bibleEntries, chapters, projects, sourceWorks } from "@/lib/db/schema";
 import { buttonVariants } from "@/components/ui/button";
 import { SummarizePanel } from "./summarize-panel";
+import { StExport } from "./st-export";
 import {
   Card,
   CardContent,
@@ -54,6 +55,19 @@ export default async function ProjectDetailPage({
         .orderBy(asc(chapters.seq))
     : [];
 
+  const characterOptions = work
+    ? await db
+        .select({ id: bibleEntries.id, name: bibleEntries.name })
+        .from(bibleEntries)
+        .where(
+          and(
+            eq(bibleEntries.workId, work.id),
+            eq(bibleEntries.kind, "character")
+          )
+        )
+        .orderBy(asc(bibleEntries.id))
+    : [];
+
   const totalChars = chapterRows.reduce((sum, c) => sum + c.charCount, 0);
   const summarizedCount = chapterRows.filter((c) => c.summary !== null).length;
 
@@ -81,6 +95,7 @@ export default async function ProjectDetailPage({
             >
               原作百科
             </Link>
+            <StExport projectId={project.id} characters={characterOptions} />
             <Link
               href={`/projects/${project.id}/script`}
               className={buttonVariants({ size: "sm" })}

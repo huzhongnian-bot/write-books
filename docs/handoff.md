@@ -4,7 +4,9 @@
 > 续做记录：2026-07-19（额度恢复，T12 收尾 + 缺陷修复完成）
 > 续做记录：2026-07-21（真实 API 验收准备：缓存断点 + 流式 usage 修复；**真实 API 受阻于无有效 key**）
 > 重构记录：2026-07-25（**可用性重构**：用户实测「完全不可用」→ 全链路诊断 + 修复 + 文档翻新）
-> 切换记录：2026-08-02（**AI 接入切换 ZenMux OpenAI 兼容协议**：`@anthropic-ai/sdk` → `openai` SDK，端点 `OPENAI_BASE_URL=https://zenmux.ai/api/v1`（key 同用户 ZenMux 账户），默认模型 `anthropic/claude-sonnet-4.5`；ZenMux 境外端点需代理，`.env.local` 配 `HTTPS_PROXY=http://127.0.0.1:7897`、client 据此启用 undici 进程级代理。usage 归并为内部 TokenUsage 形状（`prompt_tokens_details.cached_tokens` → cache_read）。**坑同前：终端环境同名变量覆盖 .env.local**——用户 PowerShell profile 的 `ANTHROPIC_*` 曾致 dev server 连不通 zenmux anthropic 端点。同批：章节概述支持勾选自选章节强制重生成，`POST /api/works/[id]/summarize` 接受 `{ seqs }`）
+> 切换记录：2026-08-02（**AI 接入切换 ZenMux OpenAI 兼容协议**：`@anthropic-ai/sdk` → `openai` SDK，端点 `OPENAI_BASE_URL=https://zenmux.ai/api/v1`（key 同用户 ZenMux 账户），默认模型 `anthropic/claude-sonnet-4.5`；ZenMux 境外端点需代理，`.env.local` 配 `HTTPS_PROXY=http://127.0.0.1:7897`、client 据此启用 undici 进程级代理。usage 归并为内部 TokenUsage 形状（`prompt_tokens_details.cached_tokens` → cache_read）。**坑同前：终端环境同名变量覆盖 .env.local**——用户 PowerShell profile 的 `ANTHROPIC_*` 曾致 dev server 连不通 zenmux anthropic 端点。同批：章节概述支持勾选自选章节强制重生成，`POST /api/works/[id]/summarize` 接受 `{ seqs }`；新增 `/projects/[id]/summaries` 概述查看页）
+> 方案记录：2026-08-02（**SillyTavern 集成 MVP 方案**：`docs/specs/sillytavern.md` v0.1 草案——MVP 定为导出向（bible → ST 世界书 lorebook JSON + character 条目 → charaCard V2 角色卡 JSON，纯格式转换零 AI 零新依赖），P2 卡导入、P3 OpenAI 兼容聊天后端（复用检索+组装+ZenMux 转发）仅记方向）
+> 验收记录：2026-08-02（**SillyTavern MVP 已实现并通过 ST 1.18 真实导入验收**：映射纯函数 16 单测 + 两个导出端点 + 项目页顶栏入口；世界书/角色卡经 ST API 导入后与导出物逐字节一致，规格 §五 全勾。坑：ST API 要 CSRF token + session；`/api/worldinfo/import` multipart 会 500，世界书导入实为前端解析后走 `/api/worldinfo/edit`；`first_mes` 零 AI 效果待用户开聊评估）
 > 真相基准：以下状态由实跑 `tsc / vitest / eslint / build / 端到端 smoke` 核实。
 
 ## 当前验收命令实测状态（2026-07-25）
